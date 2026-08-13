@@ -371,7 +371,13 @@
 
   <div class="grid-2">
     <div class="panel">
-      <h2>Top Stores — This Selection</h2>
+      <h2>
+        <span id="storeRankTitle">Top Stores</span> — This Selection
+        <span class="toggle" id="storeRankToggle">
+          <span class="active" data-rank="top">Top</span>
+          <span data-rank="bottom">Bottom</span>
+        </span>
+      </h2>
       <table>
         <thead>
           <tr><th>Store</th><th>State</th><th>Type</th><th class="num">$ Total</th></tr>
@@ -388,6 +394,19 @@
         <tbody id="topSkusBody"></tbody>
       </table>
     </div>
+  </div>
+
+  <div class="panel">
+    <h2>
+      No Movement — 0 units sold in this selection
+      <span id="noMoveCount" style="text-transform:none;letter-spacing:0;"></span>
+    </h2>
+    <table>
+      <thead>
+        <tr><th>Store</th><th>State</th><th>Type</th><th class="num">Stock on Hand</th><th class="num">SOH Value</th></tr>
+      </thead>
+      <tbody id="noMoveBody"></tbody>
+    </table>
   </div>
 </main>
 
@@ -415,6 +434,7 @@ function monthInfo(wk){
 }
 let stateMetric = "sales_value";
 let storeMetric = "sales_value";
+let storeRank = "top";
 let stateGranularity = "week";
 let storeGranularity = "week";
 let stateChart, storeChart;
@@ -504,7 +524,9 @@ async function loadData(){
         state: s.state || "",
         order_type: s.order_type || "Bunnings Retail",
         units_sold: Number(f.units_sold) || 0,
-        sales_value: Number(f.sales_value) || 0
+        sales_value: Number(f.sales_value) || 0,
+        soh: Number(f.soh) || 0,
+        soh_value: Number(f.soh_value) || 0
       };
     });
 
@@ -738,6 +760,15 @@ function buildFilters(){
     render();
   });
 
+  document.getElementById("storeRankToggle").querySelectorAll("span").forEach(el => {
+    el.addEventListener("click", () => {
+      document.querySelectorAll("#storeRankToggle span").forEach(s => s.classList.remove("active"));
+      el.classList.add("active");
+      storeRank = el.dataset.rank;
+      render();
+    });
+  });
+
   document.getElementById("typeFilters").querySelectorAll(".chip").forEach(chip => {
     chip.addEventListener("click", () => {
       document.querySelectorAll("#typeFilters .chip").forEach(c => c.classList.remove("active"));
@@ -838,6 +869,7 @@ function render(){
   renderStoreTrend(f);
   renderTopStores(f);
   renderTopSkus(f);
+  renderNoMovement(f);
 }
 
 function renderStateTrend(f){
@@ -940,21 +972,53 @@ function chartOpts(metric){
 }
 
 function renderTopStores(f){
-  const byStore = {};
-  f.forEach(r => {
-    const key = r.store;
-    if(!byStore[key]) byStore[key] = { name:r.store_name, state:r.state, type:r.order_type, total:0 };
-    byStore[key].total += Number(r.sales_value||0);
-  });
-  const rowsOut = Object.values(byStore).sort((a,b) => b.total - a.total).slice(0,10);
+  const byStore = new Map();
+  for(const r of f){
+    let e = byStore.get(r.store);
+    if(!e){ e = { name:r.store_name, state:r.state, type:r.order_type, total:0 }; byStore.set(r.store, e); }
+    e.total += Number(r.sales_value) || 0;
+  }
+  // Bottom list is about weak SELLERS, so drop stores with no sales at all —
+  // those are a different problem and get their own No Movement panel.
+  let list = [...byStore.values()];
+  if(storeRank === "bottom") list = list.filter(e => e.total > 0);
+  list.sort((a,b) => storeRank === "top" ? b.total - a.total : a.total - b.total);
+  const rowsOut = list.slice(0,10);
+
+  document.getElementById("storeRankTitle").textContent =
+    storeRank === "top" ? "Top Stores" : "Weakest Stores";
+
   const body = document.getElementById("topStoresBody");
-  body.innerHTML = rowsOut.length ? rowsOut.map(r => `
-    <tr>
-      <td>${r.name}</td>
-      <td>${r.state}</td>
-      <td><span class="badge ${r.type === "Bunnings Trade" ? "trade":"retail"}">${r.type === "Bunnings Trade" ? "Trade":"Retail"}</span></td>
-      <td class="num">${fmtMoney(r.total)}</td>
-    </tr>`).join("") : `<tr><td colspan="4" class="empty">No data for this selection</td></tr>`;
+  body.innerHTML = rowsOut.length ? rowsOut.map(r => '<tr><td>' + r.name + '</td><td>' + r.state +
+    '</td><td><span class="badge ' + (r.type === "Bunnings Trade" ? "trade" : "retail") + '">' +
+    (r.type === "Bunnings Trade" ? "Trade" : "Retail") + '</span></td><td class="num">' +
+    fmtMoney(r.total) + '</td></tr>').join("")
+    : '<tr><td colspan="4" class="empty">No data for this selection</td></tr>';
+}
+
+// Stores carrying stock but selling nothing in the selected period.
+// This is the list a rep visit should target.
+function renderNoMovement(f){
+  const byStore = new Map();
+  for(const r of f){
+    let e = byStore.get(r.store);
+    if(!e){ e = { name:r.store_name, state:r.state, type:r.order_type, units:0, soh:0, sohVal:0 }; byStore.set(r.store, e); }
+    e.units += Number(r.units_sold) || 0;
+    e.soh += Number(r.soh) || 0;
+    e.sohVal += Number(r.soh_value) || 0;
+  }
+  const dead = [...byStore.values()].filter(e => e.units === 0)
+    .sort((a,b) => b.sohVal - a.sohVal);
+
+  document.getElementById("noMoveCount").textContent =
+    dead.length ? "  \u00b7  " + dead.length + " store" + (dead.length === 1 ? "" : "s") : "";
+
+  const body = document.getElementById("noMoveBody");
+  body.innerHTML = dead.length ? dead.slice(0,25).map(r => '<tr><td>' + r.name + '</td><td>' + r.state +
+    '</td><td><span class="badge ' + (r.type === "Bunnings Trade" ? "trade" : "retail") + '">' +
+    (r.type === "Bunnings Trade" ? "Trade" : "Retail") + '</span></td><td class="num">' +
+    fmtNum(r.soh) + '</td><td class="num">' + fmtMoney(r.sohVal) + '</td></tr>').join("")
+    : '<tr><td colspan="5" class="empty">Every store sold at least one unit \u2014 nothing stalled</td></tr>';
 }
 
 function renderTopSkus(f){
