@@ -49,7 +49,26 @@
   #lastUpdated{
     color:var(--muted);
     font-size:12px;
+    text-align:right;
   }
+  #latestWeek{
+    font-size:13px;
+    font-weight:600;
+    color:var(--text);
+    margin-bottom:3px;
+    text-align:right;
+  }
+  .stale-badge{
+    display:inline-block;
+    margin-left:8px;
+    padding:2px 8px;
+    border-radius:10px;
+    font-size:11px;
+    font-weight:600;
+  }
+  .stale-badge.fresh{ background:rgba(46,158,91,0.15);  color:var(--green); }
+  .stale-badge.due{   background:rgba(224,185,79,0.15); color:var(--amber); }
+  .stale-badge.stale{ background:rgba(192,57,43,0.15);  color:#e8776a; }
 
   .country-tabs{
     display:flex;
@@ -264,7 +283,10 @@
     <h1>Bunnings Inventory Tracker</h1>
     <div class="sub">Weekly SKU-level inventory &amp; sales, by store and state — rep-performance baseline</div>
   </div>
-  <div id="lastUpdated">Loading…</div>
+  <div>
+    <div id="latestWeek"></div>
+    <div id="lastUpdated">Loading…</div>
+  </div>
 </header>
 
 <div class="country-tabs" id="countryToggle">
@@ -540,8 +562,9 @@ async function loadData(){
     buildFilters();
     const secs = ((performance.now() - started)/1000).toFixed(1);
     document.getElementById("lastUpdated").textContent =
-      "Data as of " + new Date().toLocaleString("en-AU", { dateStyle:"medium", timeStyle:"short" }) +
+      "Loaded " + new Date().toLocaleString("en-AU", { dateStyle:"medium", timeStyle:"short" }) +
       "  \u00b7  " + rows.length.toLocaleString() + " rows in " + secs + "s";
+    showLatestWeek();
     render();
   }catch(err){
     const el = document.getElementById("loadError");
@@ -825,6 +848,7 @@ function buildFilters(){
       rebuildQuarterOptions();
       refreshMonthOptions();
       refreshWeekOptions();
+      showLatestWeek();
       render();
     });
   });
@@ -846,6 +870,27 @@ function applyFilters(){
     (filters.quarter === "all" || r.qkey === qFilterNum) &&
     (filters.monthFrom === null || filters.monthTo === null || (r.mkey >= filters.monthFrom && r.mkey <= filters.monthTo))
   );
+}
+
+// Newest week present for the active country, with a freshness badge.
+// Without this, a dashboard nobody has updated for a month still looks healthy.
+function showLatestWeek(){
+  const el = document.getElementById("latestWeek");
+  const weeks = allWeeksSorted();
+  if(!weeks.length){ el.textContent = "No data loaded"; return; }
+
+  const latest = weeks[weeks.length - 1];
+  const label = new Date(latest + "T00:00:00").toLocaleDateString("en-AU",
+    { day:"2-digit", month:"short", year:"numeric" });
+
+  const days = Math.floor((Date.now() - new Date(latest + "T00:00:00").getTime()) / 86400000);
+  const wks = Math.floor(days / 7);
+  let cls = "fresh", note = "up to date";
+  if(wks >= 4){ cls = "stale"; note = wks + " weeks behind"; }
+  else if(wks >= 2){ cls = "due"; note = wks + " weeks behind"; }
+
+  el.innerHTML = "Latest week: " + label +
+    ' <span class="stale-badge ' + cls + '">' + note + "</span>";
 }
 
 function render(){
