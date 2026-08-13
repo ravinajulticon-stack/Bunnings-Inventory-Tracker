@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bunnings Inventory Tracker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#0b0e14;
+    --panel:#12161f;
+    --panel-border:#232838;
+    --text:#e7eaf0;
+    --muted:#8a92a6;
+    --navy:#1f4e78;
+    --green:#2e9e5b;
+    --amber:#e0b94f;
+    --red:#c0392b;
+    --trade:#4f8ef7;
+    --retail:#f2994a;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  header{
+    padding:22px 28px 14px;
+    border-bottom:1px solid var(--panel-border);
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    flex-wrap:wrap;
+    gap:12px;
+  }
+  header h1{
+    margin:0;
+    font-size:20px;
+    font-weight:600;
+    letter-spacing:0.2px;
+  }
+  header .sub{
+    color:var(--muted);
+    font-size:12.5px;
+    margin-top:4px;
+  }
+  #lastUpdated{
+    color:var(--muted);
+    font-size:12px;
+  }
+
+  .filters{
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+    padding:16px 28px;
+    border-bottom:1px solid var(--panel-border);
+    align-items:center;
+  }
+  .filter-group{
+    display:flex;
+    gap:6px;
+    flex-wrap:wrap;
+  }
+  .chip{
+    padding:6px 14px;
+    border-radius:20px;
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    color:var(--muted);
+    font-size:12.5px;
+    cursor:pointer;
+    user-select:none;
+    transition:all .12s ease;
+  }
+  .chip:hover{ border-color:#3a4256; color:var(--text); }
+  .chip.active{
+    background:var(--navy);
+    color:#fff;
+    border-color:var(--navy);
+  }
+  .filter-label{
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:0.6px;
+    color:var(--muted);
+    margin-right:4px;
+    align-self:center;
+  }
+  select{
+    background:var(--panel);
+    color:var(--text);
+    border:1px solid var(--panel-border);
+    border-radius:8px;
+    padding:6px 10px;
+    font-size:12.5px;
+  }
+
+  main{ padding:22px 28px 40px; }
+
+  .kpi-row{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+    gap:14px;
+    margin-bottom:22px;
+  }
+  .kpi{
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    border-radius:12px;
+    padding:16px 18px;
+  }
+  .kpi .label{
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:0.6px;
+    color:var(--muted);
+    margin-bottom:8px;
+  }
+  .kpi .value{
+    font-size:24px;
+    font-weight:700;
+  }
+  .kpi .sub{
+    font-size:11.5px;
+    color:var(--muted);
+    margin-top:4px;
+  }
+  .kpi.trade .value{ color:var(--trade); }
+  .kpi.retail .value{ color:var(--retail); }
+
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    border-radius:12px;
+    padding:18px 20px;
+    margin-bottom:18px;
+  }
+  .panel h2{
+    font-size:13px;
+    text-transform:uppercase;
+    letter-spacing:0.6px;
+    color:var(--muted);
+    margin:0 0 14px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+  }
+  .panel h2 .toggle{
+    display:flex;
+    gap:6px;
+  }
+  .panel h2 .toggle span{
+    padding:3px 10px;
+    border-radius:14px;
+    border:1px solid var(--panel-border);
+    font-size:11px;
+    cursor:pointer;
+    text-transform:none;
+    letter-spacing:0;
+  }
+  .panel h2 .toggle span.active{
+    background:var(--navy);
+    color:#fff;
+    border-color:var(--navy);
+  }
+  canvas{ max-height:320px; }
+
+  .grid-2{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:18px;
+  }
+  @media (max-width:920px){
+    .grid-2{ grid-template-columns:1fr; }
+  }
+
+  table{
+    width:100%;
+    border-collapse:collapse;
+    font-size:13px;
+  }
+  th, td{
+    text-align:left;
+    padding:8px 10px;
+    border-bottom:1px solid var(--panel-border);
+  }
+  th{
+    color:var(--muted);
+    font-weight:600;
+    text-transform:uppercase;
+    font-size:10.5px;
+    letter-spacing:0.5px;
+  }
+  td.num, th.num{ text-align:right; }
+  tr:hover td{ background:#161b26; }
+
+  .badge{
+    display:inline-block;
+    padding:2px 9px;
+    border-radius:10px;
+    font-size:11px;
+    font-weight:600;
+  }
+  .badge.trade{ background:rgba(79,142,247,0.15); color:var(--trade); }
+  .badge.retail{ background:rgba(242,153,74,0.15); color:var(--retail); }
+
+  .empty{
+    color:var(--muted);
+    font-size:13px;
+    padding:20px 0;
+    text-align:center;
+  }
+  #loadError{
+    display:none;
+    background:rgba(192,57,43,0.12);
+    border:1px solid var(--red);
+    color:#f3a79c;
+    padding:12px 16px;
+    border-radius:8px;
+    margin-bottom:18px;
+    font-size:13px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Bunnings Inventory Tracker</h1>
+    <div class="sub">Weekly SKU-level inventory &amp; sales, by store and state — rep-performance baseline</div>
+  </div>
+  <div id="lastUpdated">Loading…</div>
+</header>
+
+<div class="filters">
+  <span class="filter-label">State</span>
+  <div class="filter-group" id="stateFilters"></div>
+
+  <span class="filter-label" style="margin-left:14px;">Order type</span>
+  <div class="filter-group" id="typeFilters">
+    <span class="chip active" data-type="all">All</span>
+    <span class="chip" data-type="Bunnings Trade">Trade</span>
+    <span class="chip" data-type="Bunnings Retail">Retail</span>
+  </div>
+
+  <span class="filter-label" style="margin-left:14px;">Store</span>
+  <select id="storeFilter"><option value="all">All stores</option></select>
+
+  <span class="filter-label" style="margin-left:14px;">Week</span>
+  <select id="weekFilter"><option value="all">All weeks</option></select>
+</div>
+
+<main>
+  <div id="loadError"></div>
+
+  <div class="kpi-row">
+    <div class="kpi">
+      <div class="label">Total $</div>
+      <div class="value" id="kpiTotal">–</div>
+      <div class="sub" id="kpiTotalSub">&nbsp;</div>
+    </div>
+    <div class="kpi trade">
+      <div class="label">Bunnings Trade</div>
+      <div class="value" id="kpiTrade">–</div>
+      <div class="sub" id="kpiTradeSub">&nbsp;</div>
+    </div>
+    <div class="kpi retail">
+      <div class="label">Bunnings Retail</div>
+      <div class="value" id="kpiRetail">–</div>
+      <div class="sub" id="kpiRetailSub">&nbsp;</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Active Stores</div>
+      <div class="value" id="kpiStores">–</div>
+      <div class="sub" id="kpiStoresSub">&nbsp;</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Units Sold</div>
+      <div class="value" id="kpiUnits">–</div>
+      <div class="sub" id="kpiUnitsSub">&nbsp;</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>
+      Trend Per State
+      <span class="toggle" id="stateMetricToggle">
+        <span class="active" data-metric="sales_value">$</span>
+        <span data-metric="units_sold">Units</span>
+      </span>
+    </h2>
+    <canvas id="stateTrendChart"></canvas>
+  </div>
+
+  <div class="panel">
+    <h2>
+      Trend Per Store — Top 10 by $
+      <span class="toggle" id="storeMetricToggle">
+        <span class="active" data-metric="sales_value">$</span>
+        <span data-metric="units_sold">Units</span>
+      </span>
+    </h2>
+    <canvas id="storeTrendChart"></canvas>
+  </div>
+
+  <div class="grid-2">
+    <div class="panel">
+      <h2>Top Stores — This Selection</h2>
+      <table>
+        <thead>
+          <tr><th>Store</th><th>State</th><th>Type</th><th class="num">$ Total</th></tr>
+        </thead>
+        <tbody id="topStoresBody"></tbody>
+      </table>
+    </div>
+    <div class="panel">
+      <h2>Top SKUs — This Selection</h2>
+      <table>
+        <thead>
+          <tr><th>SKU</th><th>Description</th><th class="num">Units</th><th class="num">$ Total</th></tr>
+        </thead>
+        <tbody id="topSkusBody"></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<script>
+const SUPABASE_URL = "https://vggbzpvgukprwpopewot.supabase.co";
+const SUPABASE_KEY = "sb_publishable_hG5I11kQ9k5IBYrHaCTkRg_WrwCXYAG";
+
+const STATE_COLORS = {
+  NSW:"#4f8ef7", VIC:"#e0b94f", QLD:"#2e9e5b", WA:"#c0392b",
+  SA:"#9b59b6", TAS:"#1abc9c", ACT:"#e67e22", NT:"#95a5a6", NQ:"#3498db"
+};
+const stateColor = (s, i) => STATE_COLORS[s] || `hsl(${(i*57)%360} 70% 60%)`;
+
+let rows = [];
+let filters = { state: "all", type: "all", store: "all", week: "all" };
+let stateMetric = "sales_value";
+let storeMetric = "sales_value";
+let stateChart, storeChart;
+
+const fmtMoney = n => "$" + Math.round(n).toLocaleString();
+const fmtNum = n => Math.round(n).toLocaleString();
+const fmtWeek = d => {
+  const dt = new Date(d + "T00:00:00");
+  return dt.toLocaleDateString("en-AU", { day:"2-digit", month:"short" });
+};
+
+async function loadData(){
+  try{
+    let all = [];
+    let from = 0;
+    const pageSize = 1000;
+    while(true){
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/bunnings_weekly_view?select=*&order=wk_start.asc&offset=${from}&limit=${pageSize}`,
+        { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
+      );
+      if(!res.ok) throw new Error(`Supabase returned ${res.status}`);
+      const chunk = await res.json();
+      all = all.concat(chunk);
+      if(chunk.length < pageSize) break;
+      from += pageSize;
+    }
+    rows = all;
+    if(rows.length === 0){
+      document.getElementById("loadError").style.display = "block";
+      document.getElementById("loadError").textContent =
+        "Connected to Supabase, but no rows found yet in bunnings_weekly_inventory. Import a weekly CSV to see data here.";
+    }
+    buildFilters();
+    document.getElementById("lastUpdated").textContent =
+      "Data as of " + new Date().toLocaleString("en-AU", { dateStyle:"medium", timeStyle:"short" });
+    render();
+  }catch(err){
+    const el = document.getElementById("loadError");
+    el.style.display = "block";
+    el.textContent = "Couldn't load data from Supabase: " + err.message;
+    document.getElementById("lastUpdated").textContent = "Load failed";
+  }
+}
+
+function buildFilters(){
+  const states = [...new Set(rows.map(r => r.state))].sort();
+  const stateWrap = document.getElementById("stateFilters");
+  stateWrap.innerHTML = `<span class="chip active" data-state="all">All</span>` +
+    states.map(s => `<span class="chip" data-state="${s}">${s}</span>`).join("");
+  stateWrap.querySelectorAll(".chip").forEach(chip => {
+    chip.addEventListener("click", () => {
+      stateWrap.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
+      chip.classList.add("active");
+      filters.state = chip.dataset.state;
+      render();
+    });
+  });
+
+  const stores = [...new Map(rows.map(r => [r.store, r.store_name])).entries()]
+    .sort((a,b) => a[1].localeCompare(b[1]));
+  const storeSel = document.getElementById("storeFilter");
+  storeSel.innerHTML = `<option value="all">All stores</option>` +
+    stores.map(([id,name]) => `<option value="${id}">${name}</option>`).join("");
+  storeSel.addEventListener("change", () => { filters.store = storeSel.value; render(); });
+
+  const weeks = [...new Set(rows.map(r => r.wk_start))].sort();
+  const weekSel = document.getElementById("weekFilter");
+  weekSel.innerHTML = `<option value="all">All weeks</option>` +
+    weeks.map(w => `<option value="${w}">${fmtWeek(w)}</option>`).join("");
+  weekSel.addEventListener("change", () => { filters.week = weekSel.value; render(); });
+
+  document.getElementById("typeFilters").querySelectorAll(".chip").forEach(chip => {
+    chip.addEventListener("click", () => {
+      document.querySelectorAll("#typeFilters .chip").forEach(c => c.classList.remove("active"));
+      chip.classList.add("active");
+      filters.type = chip.dataset.type;
+      render();
+    });
+  });
+
+  document.getElementById("stateMetricToggle").querySelectorAll("span").forEach(el => {
+    el.addEventListener("click", () => {
+      document.querySelectorAll("#stateMetricToggle span").forEach(s => s.classList.remove("active"));
+      el.classList.add("active");
+      stateMetric = el.dataset.metric;
+      render();
+    });
+  });
+  document.getElementById("storeMetricToggle").querySelectorAll("span").forEach(el => {
+    el.addEventListener("click", () => {
+      document.querySelectorAll("#storeMetricToggle span").forEach(s => s.classList.remove("active"));
+      el.classList.add("active");
+      storeMetric = el.dataset.metric;
+      render();
+    });
+  });
+}
+
+function applyFilters(){
+  return rows.filter(r =>
+    (filters.state === "all" || r.state === filters.state) &&
+    (filters.type === "all" || r.order_type === filters.type) &&
+    (filters.store === "all" || r.store === filters.store) &&
+    (filters.week === "all" || r.wk_start === filters.week)
+  );
+}
+
+function render(){
+  const f = applyFilters();
+
+  const total = f.reduce((s,r) => s + Number(r.sales_value||0), 0);
+  const trade = f.filter(r => r.order_type === "Bunnings Trade").reduce((s,r) => s + Number(r.sales_value||0), 0);
+  const retail = f.filter(r => r.order_type === "Bunnings Retail").reduce((s,r) => s + Number(r.sales_value||0), 0);
+  const units = f.reduce((s,r) => s + Number(r.units_sold||0), 0);
+  const stores = new Set(f.map(r => r.store)).size;
+
+  document.getElementById("kpiTotal").textContent = fmtMoney(total);
+  document.getElementById("kpiTrade").textContent = fmtMoney(trade);
+  document.getElementById("kpiTradeSub").textContent = total ? Math.round(trade/total*100) + "% of total" : "";
+  document.getElementById("kpiRetail").textContent = fmtMoney(retail);
+  document.getElementById("kpiRetailSub").textContent = total ? Math.round(retail/total*100) + "% of total" : "";
+  document.getElementById("kpiStores").textContent = fmtNum(stores);
+  document.getElementById("kpiUnits").textContent = fmtNum(units);
+
+  renderStateTrend(f);
+  renderStoreTrend(f);
+  renderTopStores(f);
+  renderTopSkus(f);
+}
+
+function renderStateTrend(f){
+  const weeks = [...new Set(f.map(r => r.wk_start))].sort();
+  const states = [...new Set(f.map(r => r.state))].sort();
+  const datasets = states.map((s,i) => ({
+    label: s,
+    data: weeks.map(w => f.filter(r => r.state === s && r.wk_start === w)
+      .reduce((sum,r) => sum + Number(r[stateMetric]||0), 0)),
+    borderColor: stateColor(s,i),
+    backgroundColor: stateColor(s,i),
+    tension: 0.3,
+    pointRadius: 3
+  }));
+
+  const ctx = document.getElementById("stateTrendChart");
+  if(stateChart) stateChart.destroy();
+  if(weeks.length === 0){ return; }
+  stateChart = new Chart(ctx, {
+    type: "line",
+    data: { labels: weeks.map(fmtWeek), datasets },
+    options: chartOpts(stateMetric)
+  });
+}
+
+function renderStoreTrend(f){
+  const totalsByStore = {};
+  f.forEach(r => {
+    totalsByStore[r.store] = (totalsByStore[r.store]||0) + Number(r.sales_value||0);
+  });
+  const topStoreIds = Object.entries(totalsByStore)
+    .sort((a,b) => b[1]-a[1]).slice(0,10).map(([id]) => id);
+  const storeNames = {};
+  f.forEach(r => { storeNames[r.store] = r.store_name; });
+
+  const weeks = [...new Set(f.map(r => r.wk_start))].sort();
+  const datasets = topStoreIds.map((id,i) => ({
+    label: storeNames[id],
+    data: weeks.map(w => f.filter(r => r.store === id && r.wk_start === w)
+      .reduce((sum,r) => sum + Number(r[storeMetric]||0), 0)),
+    borderColor: stateColor(id,i),
+    backgroundColor: stateColor(id,i),
+    tension: 0.3,
+    pointRadius: 3
+  }));
+
+  const ctx = document.getElementById("storeTrendChart");
+  if(storeChart) storeChart.destroy();
+  if(weeks.length === 0){ return; }
+  storeChart = new Chart(ctx, {
+    type: "line",
+    data: { labels: weeks.map(fmtWeek), datasets },
+    options: chartOpts(storeMetric)
+  });
+}
+
+function chartOpts(metric){
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    scales: {
+      x: { ticks: { color:"#8a92a6" }, grid: { color:"#1c2230" } },
+      y: {
+        ticks: {
+          color:"#8a92a6",
+          callback: v => metric === "sales_value" ? "$"+v.toLocaleString() : v.toLocaleString()
+        },
+        grid: { color:"#1c2230" }
+      }
+    },
+    plugins: {
+      legend: { labels: { color:"#c7cbd6", boxWidth:10, font:{ size:11 } } },
+      tooltip: {
+        callbacks: {
+          label: ctx => `${ctx.dataset.label}: ${metric === "sales_value" ? fmtMoney(ctx.parsed.y) : fmtNum(ctx.parsed.y)}`
+        }
+      }
+    }
+  };
+}
+
+function renderTopStores(f){
+  const byStore = {};
+  f.forEach(r => {
+    const key = r.store;
+    if(!byStore[key]) byStore[key] = { name:r.store_name, state:r.state, type:r.order_type, total:0 };
+    byStore[key].total += Number(r.sales_value||0);
+  });
+  const rowsOut = Object.values(byStore).sort((a,b) => b.total - a.total).slice(0,10);
+  const body = document.getElementById("topStoresBody");
+  body.innerHTML = rowsOut.length ? rowsOut.map(r => `
+    <tr>
+      <td>${r.name}</td>
+      <td>${r.state}</td>
+      <td><span class="badge ${r.type === "Bunnings Trade" ? "trade":"retail"}">${r.type === "Bunnings Trade" ? "Trade":"Retail"}</span></td>
+      <td class="num">${fmtMoney(r.total)}</td>
+    </tr>`).join("") : `<tr><td colspan="4" class="empty">No data for this selection</td></tr>`;
+}
+
+function renderTopSkus(f){
+  const bySku = {};
+  f.forEach(r => {
+    const key = r.item;
+    if(!bySku[key]) bySku[key] = { desc:r.description, units:0, total:0 };
+    bySku[key].units += Number(r.units_sold||0);
+    bySku[key].total += Number(r.sales_value||0);
+  });
+  const rowsOut = Object.entries(bySku).sort((a,b) => b[1].total - a[1].total).slice(0,10);
+  const body = document.getElementById("topSkusBody");
+  body.innerHTML = rowsOut.length ? rowsOut.map(([sku,r]) => `
+    <tr>
+      <td>${sku}</td>
+      <td>${(r.desc||"").slice(0,40)}</td>
+      <td class="num">${fmtNum(r.units)}</td>
+      <td class="num">${fmtMoney(r.total)}</td>
+    </tr>`).join("") : `<tr><td colspan="4" class="empty">No data for this selection</td></tr>`;
+}
+
+loadData();
+</script>
+
+</body>
+</html>
