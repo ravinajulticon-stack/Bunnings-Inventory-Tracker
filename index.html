@@ -247,10 +247,16 @@
   </div>
 
   <span class="filter-label" style="margin-left:14px;">Store</span>
-  <select id="storeFilter"><option value="all">All stores</option></select>
+  <select id="storeFilter"><option value="all">All Stores</option></select>
+
+  <span class="filter-label" style="margin-left:14px;">Quarter</span>
+  <select id="quarterFilter"><option value="all">All Quarters</option></select>
+
+  <span class="filter-label" style="margin-left:14px;">Month</span>
+  <select id="monthFilter"><option value="all">All Months</option></select>
 
   <span class="filter-label" style="margin-left:14px;">Week</span>
-  <select id="weekFilter"><option value="all">All weeks</option></select>
+  <select id="weekFilter"><option value="all">All Weeks</option></select>
 </div>
 
 <main>
@@ -339,7 +345,17 @@ const STATE_COLORS = {
 const stateColor = (s, i) => STATE_COLORS[s] || `hsl(${(i*57)%360} 70% 60%)`;
 
 let rows = [];
-let filters = { state: "all", type: "all", store: "all", week: "all" };
+let filters = { state: "all", type: "all", store: "all", week: "all", quarter: "all", month: "all" };
+
+function quarterInfo(wk){
+  const d = new Date(wk + "T00:00:00");
+  const q = Math.floor(d.getMonth() / 3) + 1;
+  return { key: d.getFullYear() * 10 + q, label: `Q${q} ${d.getFullYear()}` };
+}
+function monthInfo(wk){
+  const d = new Date(wk + "T00:00:00");
+  return { key: d.getFullYear() * 100 + d.getMonth(), label: d.toLocaleDateString("en-AU", { month: "short", year: "numeric" }) };
+}
 let stateMetric = "sales_value";
 let storeMetric = "sales_value";
 let stateChart, storeChart;
@@ -402,13 +418,31 @@ function buildFilters(){
   const stores = [...new Map(rows.map(r => [r.store, r.store_name])).entries()]
     .sort((a,b) => a[1].localeCompare(b[1]));
   const storeSel = document.getElementById("storeFilter");
-  storeSel.innerHTML = `<option value="all">All stores</option>` +
+  storeSel.innerHTML = `<option value="all">All Stores</option>` +
     stores.map(([id,name]) => `<option value="${id}">${name}</option>`).join("");
   storeSel.addEventListener("change", () => { filters.store = storeSel.value; render(); });
 
+  const qMap = new Map();
+  const mMap = new Map();
+  rows.forEach(r => {
+    const qi = quarterInfo(r.wk_start);
+    qMap.set(qi.key, qi.label);
+    const mi = monthInfo(r.wk_start);
+    mMap.set(mi.key, mi.label);
+  });
+  const quarterSel = document.getElementById("quarterFilter");
+  quarterSel.innerHTML = `<option value="all">All Quarters</option>` +
+    [...qMap.entries()].sort((a,b) => a[0]-b[0]).map(([k,l]) => `<option value="${k}">${l}</option>`).join("");
+  quarterSel.addEventListener("change", () => { filters.quarter = quarterSel.value; render(); });
+
+  const monthSel = document.getElementById("monthFilter");
+  monthSel.innerHTML = `<option value="all">All Months</option>` +
+    [...mMap.entries()].sort((a,b) => a[0]-b[0]).map(([k,l]) => `<option value="${k}">${l}</option>`).join("");
+  monthSel.addEventListener("change", () => { filters.month = monthSel.value; render(); });
+
   const weeks = [...new Set(rows.map(r => r.wk_start))].sort();
   const weekSel = document.getElementById("weekFilter");
-  weekSel.innerHTML = `<option value="all">All weeks</option>` +
+  weekSel.innerHTML = `<option value="all">All Weeks</option>` +
     weeks.map(w => `<option value="${w}">${fmtWeek(w)}</option>`).join("");
   weekSel.addEventListener("change", () => { filters.week = weekSel.value; render(); });
 
@@ -444,7 +478,9 @@ function applyFilters(){
     (filters.state === "all" || r.state === filters.state) &&
     (filters.type === "all" || r.order_type === filters.type) &&
     (filters.store === "all" || r.store === filters.store) &&
-    (filters.week === "all" || r.wk_start === filters.week)
+    (filters.week === "all" || r.wk_start === filters.week) &&
+    (filters.quarter === "all" || quarterInfo(r.wk_start).key === Number(filters.quarter)) &&
+    (filters.month === "all" || monthInfo(r.wk_start).key === Number(filters.month))
   );
 }
 
