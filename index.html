@@ -275,6 +275,49 @@
   .badge.trade{ background:rgba(79,142,247,0.15); color:var(--trade); }
   .badge.retail{ background:rgba(242,153,74,0.15); color:var(--retail); }
 
+  .upload-card{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:16px;
+    flex-wrap:wrap;
+    background:var(--panel);
+    border:1px dashed var(--panel-border);
+    border-radius:12px;
+    padding:14px 18px;
+    margin-bottom:18px;
+  }
+  .upload-card h3{
+    margin:0 0 3px;
+    font-size:13.5px;
+    font-weight:600;
+  }
+  .upload-card p{
+    margin:0;
+    font-size:12px;
+    color:var(--muted);
+    max-width:640px;
+  }
+  .upload-actions{ display:flex; gap:8px; align-items:center; }
+  .btn{
+    font-family:inherit;
+    font-size:12.5px;
+    font-weight:600;
+    padding:8px 16px;
+    border-radius:8px;
+    border:1px solid var(--panel-border);
+    background:#1a2030;
+    color:var(--text);
+    cursor:pointer;
+  }
+  .btn:hover:not(:disabled){ border-color:#3a4256; }
+  .btn.primary{ background:var(--navy); border-color:var(--navy); color:#fff; }
+  .btn:disabled{ opacity:.45; cursor:not-allowed; }
+  #uploadStatus{ font-size:12px; margin-top:6px; }
+  #uploadStatus.err{ color:#e8776a; }
+  #uploadStatus.ok{ color:var(--green); }
+  #uploadStatus.busy{ color:var(--amber); }
+
   .empty{
     color:var(--muted);
     font-size:13px;
@@ -345,6 +388,21 @@
 
 <main>
   <div id="loadError"></div>
+
+  <div class="upload-card">
+    <div>
+      <h3>Add this week\u2019s Bunnings CSV</h3>
+      <p>Parses in your browser, then saves to Supabase \u2014 everyone who opens this page
+      will see the update. Australia or New Zealand is detected automatically from the file.
+      Adding the same week twice overwrites that week rather than duplicating it.</p>
+      <div id="uploadStatus"></div>
+    </div>
+    <div class="upload-actions">
+      <input type="file" id="csvInput" accept=".csv,text/csv" style="display:none">
+      <button class="btn" id="chooseCsv">Choose CSV</button>
+      <button class="btn primary" id="doUpload" disabled>Add to Dashboard</button>
+    </div>
+  </div>
 
   <div class="kpi-row">
     <div class="kpi">
@@ -577,6 +635,7 @@ async function loadData(){
 
     indexWeeks();
     buildFilters();
+    if(!window.__uploadReady){ initUpload(); window.__uploadReady = true; }
     const secs = ((performance.now() - started)/1000).toFixed(1);
     document.getElementById("lastUpdated").textContent =
       "Loaded " + new Date().toLocaleString("en-AU", { dateStyle:"medium", timeStyle:"short" }) +
@@ -1113,6 +1172,164 @@ function renderTopSkus(f){
       <td class="num">${fmtNum(r.units)}</td>
       <td class="num">${fmtMoney(r.total)}</td>
     </tr>`).join("") : `<tr><td colspan="4" class="empty">No data for this selection</td></tr>`;
+}
+
+/* ---------- CSV upload -------------------------------------------------
+   Mirrors the manual pipeline: same column mapping, same YYYYMMDD -> ISO
+   date conversion, same AU/NZ detection, same duplicate handling. Writes
+   via upsert on (wk_start,item,store,country) so re-adding a week
+   overwrites it instead of creating duplicates.                          */
+
+const CSV_MAP = {
+  "Wk_Start":"wk_start", "Item":"item", "Description":"description",
+  "State":"state", "Store":"store", "Store_Name":"store_name",
+  "Units_Sold":"units_sold", "Sales_Value":"sales_value",
+  "SOH":"soh", "SOH_Value":"soh_value"
+};
+const NZ_REGIONS = new Set(["NI","SI"]);
+let pendingRows = null;
+
+function setStatus(msg, cls){
+  const el = document.getElementById("uploadStatus");
+  el.textContent = msg || "";
+  el.className = cls || "";
+}
+
+// Minimal RFC4180-ish parser: the Bunnings export quotes some fields and
+// descriptions can contain commas, so naive split(",") corrupts rows.
+function parseCsv(text){
+  const rows = [];
+  let row = [], field = "", inQ = false;
+  for(let i = 0; i < text.length; i++){
+    const c = text[i];
+    if(inQ){
+      if(c === '"'){
+        if(text[i+1] === '"'){ field += '"'; i++; }
+        else inQ = false;
+      } else field += c;
+    } else if(c === '"'){ inQ = true; }
+    else if(c === ","){ row.push(field); field = ""; }
+    else if(c === "\n"){ row.push(field); field = ""; if(row.some(v=>v!=="")) rows.push(row); row = []; }
+    else if(c !== "\r"){ field += c; }
+  }
+  row.push(field);
+  if(row.some(v=>v!=="")) rows.push(row);
+  return rows;
+}
+
+function csvToRecords(text){
+  const table = parseCsv(text);
+  if(table.length < 2) throw new Error("That file has no data rows.");
+  const head = table[0].map(h => h.trim());
+  const missing = Object.keys(CSV_MAP).filter(c => !head.includes(c));
+  if(missing.length) throw new Error("Not a Bunnings weekly export \u2014 missing column(s): " + missing.join(", "));
+  const idx = {};
+  for(const [src, dest] of Object.entries(CSV_MAP)) idx[dest] = head.indexOf(src);
+
+  const out = [];
+  const regions = new Set();
+  for(let i = 1; i < table.length; i++){
+    const t = table[i];
+    const raw = (t[idx.wk_start] || "").trim();
+    if(!raw) continue;
+    // YYYYMMDD -> YYYY-MM-DD
+    const iso = raw.length === 8 && /^\d{8}$/.test(raw)
+      ? raw.slice(0,4) + "-" + raw.slice(4,6) + "-" + raw.slice(6,8)
+      : raw;
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(iso)) throw new Error("Unexpected Wk_Start value: " + raw);
+    const num = k => { const v = parseFloat(t[idx[k]]); return isNaN(v) ? 0 : v; };
+    const state = (t[idx.state] || "").trim();
+    regions.add(state);
+    out.push({
+      wk_start: iso,
+      item: (t[idx.item] || "").trim(),
+      description: (t[idx.description] || "").trim(),
+      state: state,
+      store: (t[idx.store] || "").trim(),
+      store_name: (t[idx.store_name] || "").trim(),
+      units_sold: num("units_sold"),
+      sales_value: num("sales_value"),
+      soh: num("soh"),
+      soh_value: num("soh_value")
+    });
+  }
+  if(!out.length) throw new Error("No usable rows found in that file.");
+
+  // NZ files carry NI/SI only; AU files carry state codes. Mixed = wrong file.
+  const isNZ = [...regions].every(s => NZ_REGIONS.has(s));
+  const isAU = [...regions].every(s => !NZ_REGIONS.has(s));
+  if(!isNZ && !isAU) throw new Error("File mixes NZ (NI/SI) and AU regions \u2014 please upload them separately.");
+  const ctry = isNZ ? "NZ" : "AU";
+  out.forEach(r => { r.country = ctry; });
+
+  const weeks = [...new Set(out.map(r => r.wk_start))].sort();
+  return { records: out, country: ctry, weeks };
+}
+
+async function upsertBatch(batch){
+  const res = await fetch(SUPABASE_URL + "/rest/v1/bunnings_weekly_inventory?on_conflict=wk_start,item,store,country", {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_KEY,
+      Authorization: "Bearer " + SUPABASE_KEY,
+      "Content-Type": "application/json",
+      Prefer: "resolution=merge-duplicates,return=minimal"
+    },
+    body: JSON.stringify(batch)
+  });
+  if(!res.ok) throw new Error("Supabase rejected the upload (" + res.status + "): " + (await res.text()).slice(0,200));
+}
+
+function initUpload(){
+  const input = document.getElementById("csvInput");
+  const choose = document.getElementById("chooseCsv");
+  const go = document.getElementById("doUpload");
+
+  choose.addEventListener("click", () => input.click());
+
+  input.addEventListener("change", async () => {
+    pendingRows = null;
+    go.disabled = true;
+    const file = input.files && input.files[0];
+    if(!file) return setStatus("");
+    try{
+      setStatus("Reading " + file.name + "\u2026", "busy");
+      const parsed = csvToRecords(await file.text());
+      pendingRows = parsed;
+      const wk = parsed.weeks.length === 1 ? parsed.weeks[0]
+        : parsed.weeks[0] + " to " + parsed.weeks[parsed.weeks.length-1];
+      setStatus(file.name + ": " + parsed.records.length.toLocaleString() + " rows, " +
+        parsed.country + ", week " + wk + ". Ready to add.", "ok");
+      go.disabled = false;
+    }catch(err){
+      setStatus(err.message, "err");
+    }
+  });
+
+  go.addEventListener("click", async () => {
+    if(!pendingRows) return;
+    const { records, country: ctry, weeks } = pendingRows;
+    go.disabled = true; choose.disabled = true;
+    try{
+      const SIZE = 500;
+      for(let i = 0; i < records.length; i += SIZE){
+        await upsertBatch(records.slice(i, i + SIZE));
+        setStatus("Saving\u2026 " + Math.min(i + SIZE, records.length).toLocaleString() +
+          " / " + records.length.toLocaleString(), "busy");
+      }
+      setStatus("Added " + records.length.toLocaleString() + " rows (" + ctry + ", " +
+        weeks.length + " week" + (weeks.length === 1 ? "" : "s") + "). Reloading\u2026", "ok");
+      pendingRows = null;
+      document.getElementById("csvInput").value = "";
+      weekCache = {};
+      await loadData();
+      setStatus("Dashboard updated.", "ok");
+    }catch(err){
+      setStatus(err.message, "err");
+    }finally{
+      choose.disabled = false;
+    }
+  });
 }
 
 loadData();
