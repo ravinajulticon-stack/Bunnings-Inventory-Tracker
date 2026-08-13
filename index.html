@@ -259,8 +259,11 @@
   <span class="filter-label" style="margin-left:14px;">Month</span>
   <select id="monthFilter"><option value="all">All Months</option></select>
 
-  <span class="filter-label" style="margin-left:14px;">Week</span>
-  <select id="weekFilter"><option value="all">All Weeks</option></select>
+  <span class="filter-label" style="margin-left:14px;">From</span>
+  <select id="weekFromFilter"></select>
+
+  <span class="filter-label" style="margin-left:6px;">To</span>
+  <select id="weekToFilter"></select>
 </div>
 
 <main>
@@ -361,7 +364,7 @@ const STATE_COLORS = {
 const stateColor = (s, i) => STATE_COLORS[s] || `hsl(${(i*57)%360} 70% 60%)`;
 
 let rows = [];
-let filters = { state: "all", type: "all", store: "all", week: "all", quarter: "all", month: "all" };
+let filters = { state: "all", type: "all", store: "all", weekFrom: null, weekTo: null, quarter: "all", month: "all" };
 
 function quarterInfo(wk){
   const d = new Date(wk + "T00:00:00");
@@ -475,10 +478,18 @@ function buildFilters(){
   monthSel.addEventListener("change", () => { filters.month = monthSel.value; render(); });
 
   const weeks = [...new Set(rows.map(r => r.wk_start))].sort();
-  const weekSel = document.getElementById("weekFilter");
-  weekSel.innerHTML = `<option value="all">All Weeks</option>` +
-    weeks.map(w => `<option value="${w}">${fmtWeek(w)}</option>`).join("");
-  weekSel.addEventListener("change", () => { filters.week = weekSel.value; render(); });
+  const weekOptions = weeks.map(w => `<option value="${w}">${fmtWeek(w)} '${w.slice(2,4)}</option>`).join("");
+
+  const weekFromSel = document.getElementById("weekFromFilter");
+  const weekToSel = document.getElementById("weekToFilter");
+  weekFromSel.innerHTML = weekOptions;
+  weekToSel.innerHTML = weekOptions;
+  weekFromSel.value = weeks[0];
+  weekToSel.value = weeks[weeks.length - 1];
+  filters.weekFrom = weeks[0];
+  filters.weekTo = weeks[weeks.length - 1];
+  weekFromSel.addEventListener("change", () => { filters.weekFrom = weekFromSel.value; render(); });
+  weekToSel.addEventListener("change", () => { filters.weekTo = weekToSel.value; render(); });
 
   document.getElementById("typeFilters").querySelectorAll(".chip").forEach(chip => {
     chip.addEventListener("click", () => {
@@ -528,7 +539,7 @@ function applyFilters(){
     (filters.state === "all" || r.state === filters.state) &&
     (filters.type === "all" || r.order_type === filters.type) &&
     (filters.store === "all" || r.store === filters.store) &&
-    (filters.week === "all" || r.wk_start === filters.week) &&
+    (!filters.weekFrom || !filters.weekTo || (r.wk_start >= filters.weekFrom && r.wk_start <= filters.weekTo)) &&
     (filters.quarter === "all" || quarterInfo(r.wk_start).key === Number(filters.quarter)) &&
     (filters.month === "all" || monthInfo(r.wk_start).key === Number(filters.month))
   );
