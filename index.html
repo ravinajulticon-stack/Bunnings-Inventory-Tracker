@@ -51,6 +51,31 @@
     font-size:12px;
   }
 
+  .country-tabs{
+    display:flex;
+    gap:4px;
+    padding:14px 28px 0;
+    background:var(--bg);
+  }
+  .country-tabs button{
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    color:var(--muted);
+    font-family:inherit;
+    font-size:13px;
+    font-weight:600;
+    padding:8px 20px;
+    border-radius:9px;
+    cursor:pointer;
+    transition:all .12s ease;
+  }
+  .country-tabs button:hover{ color:var(--text); border-color:#3a4256; }
+  .country-tabs button.active{
+    background:var(--navy);
+    color:#fff;
+    border-color:var(--navy);
+  }
+
   .filters{
     display:flex;
     flex-wrap:wrap;
@@ -239,6 +264,11 @@
   <div id="lastUpdated">Loading…</div>
 </header>
 
+<div class="country-tabs" id="countryToggle">
+  <button class="active" data-country="AU">Australia</button>
+  <button data-country="NZ">New Zealand</button>
+</div>
+
 <div class="filters">
   <span class="filter-label">State</span>
   <div class="filter-group" id="stateFilters"></div>
@@ -402,7 +432,10 @@ function getBuckets(f, gran){
   return { keys, labels: keys.map(k => map.get(k)) };
 }
 
-const fmtMoney = n => "$" + Math.round(n).toLocaleString();
+const CURRENCY = { AU: "A$", NZ: "NZ$" };
+let country = "AU";
+const curSym = () => CURRENCY[country] || "$";
+const fmtMoney = n => curSym() + Math.round(n).toLocaleString();
 const fmtNum = n => Math.round(n).toLocaleString();
 const fmtWeek = d => {
   const dt = new Date(d + "T00:00:00");
@@ -448,12 +481,13 @@ async function loadData(){
     ]);
 
     // Lookup maps so each fact row stays tiny over the wire
-    const storeMap = new Map(stores.map(s => [s.store, s]));
+    const storeMap = new Map(stores.map(s => [s.country + "|" + s.store, s]));
     const itemMap = new Map(items.map(i => [i.item, i.description]));
 
     rows = factPages.flat().map(f => {
-      const s = storeMap.get(f.store) || {};
+      const s = storeMap.get(f.country + "|" + f.store) || {};
       return {
+        country: f.country,
         wk_start: f.wk_start,
         item: f.item,
         description: itemMap.get(f.item) || "",
@@ -489,7 +523,7 @@ async function loadData(){
 let storeSel, quarterSel, monthFromSel, monthToSel, weekFromSel, weekToSel;
 
 function allWeeksSorted(){
-  return [...new Set(rows.map(r => r.wk_start))].sort();
+  return [...new Set(rows.filter(r => r.country === country).map(r => r.wk_start))].sort();
 }
 
 // Weeks available given the currently selected quarter
@@ -511,9 +545,37 @@ function optTag(value, label){
   return '<option value="' + value + '">' + label + '</option>';
 }
 
+// Rebuild the State chips for the active country
+function rebuildStateChips(){
+  const states = [...new Set(rows.filter(r => r.country === country).map(r => r.state))].sort();
+  const stateWrap = document.getElementById("stateFilters");
+  stateWrap.innerHTML = '<span class="chip active" data-state="all">All</span>' +
+    states.map(s => '<span class="chip" data-state="' + s + '">' + s + '</span>').join("");
+  stateWrap.querySelectorAll(".chip").forEach(chip => {
+    chip.addEventListener("click", () => {
+      stateWrap.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
+      chip.classList.add("active");
+      filters.state = chip.dataset.state;
+      refreshStoreOptions();
+      render();
+    });
+  });
+}
+
+// Rebuild the Quarter list for the active country
+function rebuildQuarterOptions(){
+  const qMap = new Map();
+  rows.filter(r => r.country === country).forEach(r => {
+    const qi = quarterInfo(r.wk_start);
+    qMap.set(qi.key, qi.label);
+  });
+  quarterSel.innerHTML = optTag("all", "All Quarters") +
+    [...qMap.entries()].sort((a,b) => a[0]-b[0]).map(e => optTag(e[0], e[1])).join("");
+}
+
 // Rebuild Store list from the selected State
 function refreshStoreOptions(){
-  const scoped = rows.filter(r => filters.state === "all" || r.state === filters.state);
+  const scoped = rows.filter(r => r.country === country && (filters.state === "all" || r.state === filters.state));
   const list = [...new Map(scoped.map(r => [r.store, r.store_name])).entries()]
     .sort((a,b) => a[1].localeCompare(b[1]));
   storeSel.innerHTML = optTag("all", "All Stores") +
@@ -572,31 +634,12 @@ function buildFilters(){
   weekFromSel = document.getElementById("weekFromFilter");
   weekToSel = document.getElementById("weekToFilter");
 
-  // State chips -> cascade into Store list
-  const states = [...new Set(rows.map(r => r.state))].sort();
-  const stateWrap = document.getElementById("stateFilters");
-  stateWrap.innerHTML = '<span class="chip active" data-state="all">All</span>' +
-    states.map(s => '<span class="chip" data-state="' + s + '">' + s + '</span>').join("");
-  stateWrap.querySelectorAll(".chip").forEach(chip => {
-    chip.addEventListener("click", () => {
-      stateWrap.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
-      chip.classList.add("active");
-      filters.state = chip.dataset.state;
-      refreshStoreOptions();
-      render();
-    });
-  });
+  // State chips -> cascade into Store list. Rebuilt on country switch.
+  rebuildStateChips();
 
   storeSel.addEventListener("change", () => { filters.store = storeSel.value; render(); });
 
-  // Quarter options (full list, always available)
-  const qMap = new Map();
-  rows.forEach(r => {
-    const qi = quarterInfo(r.wk_start);
-    qMap.set(qi.key, qi.label);
-  });
-  quarterSel.innerHTML = optTag("all", "All Quarters") +
-    [...qMap.entries()].sort((a,b) => a[0]-b[0]).map(e => optTag(e[0], e[1])).join("");
+  rebuildQuarterOptions();
 
   // Quarter -> cascade into Months, then Weeks
   quarterSel.addEventListener("change", () => {
@@ -658,8 +701,7 @@ function buildFilters(){
     filters.monthTo = null;
     filters.weekFrom = null;
     filters.weekTo = null;
-    stateWrap.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
-    stateWrap.querySelector('[data-state="all"]').classList.add("active");
+    rebuildStateChips();
     document.querySelectorAll("#typeFilters .chip").forEach(c => c.classList.remove("active"));
     document.querySelector('#typeFilters [data-type="all"]').classList.add("active");
     quarterSel.value = "all";
@@ -702,6 +744,33 @@ function buildFilters(){
     });
   });
 
+  document.getElementById("countryToggle").querySelectorAll("button").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if(btn.dataset.country === country) return;
+      document.querySelectorAll("#countryToggle button").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      country = btn.dataset.country;
+      // country changes the whole universe of stores/states/weeks, so reset
+      filters.state = "all";
+      filters.type = "all";
+      filters.store = "all";
+      filters.quarter = "all";
+      filters.monthFrom = null;
+      filters.monthTo = null;
+      filters.weekFrom = null;
+      filters.weekTo = null;
+      quarterSel.value = "all";
+      document.querySelectorAll("#typeFilters .chip").forEach(c => c.classList.remove("active"));
+      document.querySelector('#typeFilters [data-type="all"]').classList.add("active");
+      rebuildStateChips();
+      refreshStoreOptions();
+      rebuildQuarterOptions();
+      refreshMonthOptions();
+      refreshWeekOptions();
+      render();
+    });
+  });
+
   // Initial population
   refreshStoreOptions();
   refreshMonthOptions();
@@ -710,6 +779,7 @@ function buildFilters(){
 
 function applyFilters(){
   return rows.filter(r =>
+    r.country === country &&
     (filters.state === "all" || r.state === filters.state) &&
     (filters.type === "all" || r.order_type === filters.type) &&
     (filters.store === "all" || r.store === filters.store) &&
@@ -805,7 +875,7 @@ function chartOpts(metric){
       y: {
         ticks: {
           color:"#8a92a6",
-          callback: v => metric === "sales_value" ? "$"+v.toLocaleString() : v.toLocaleString()
+          callback: v => metric === "sales_value" ? curSym()+v.toLocaleString() : v.toLocaleString()
         },
         grid: { color:"#1c2230" }
       }
