@@ -419,20 +419,22 @@ let stateGranularity = "week";
 let storeGranularity = "week";
 let stateChart, storeChart;
 
-function bucketKey(wk, gran){
-  return gran === "month" ? monthInfo(wk).key : wk;
+function bucketKey(r, gran){
+  return gran === "month" ? r.mkey : r.wk_start;
 }
-function bucketLabel(wk, gran){
-  return gran === "month" ? monthInfo(wk).label : fmtWeek(wk);
+function bucketLabel(r, gran){
+  return gran === "month" ? monthInfo(r.wk_start).label : fmtWeek(r.wk_start);
 }
 function getBuckets(f, gran){
   const map = new Map();
   f.forEach(r => {
-    const k = bucketKey(r.wk_start, gran);
-    if(!map.has(k)) map.set(k, bucketLabel(r.wk_start, gran));
+    const k = bucketKey(r, gran);
+    if(!map.has(k)) map.set(k, bucketLabel(r, gran));
   });
   const keys = [...map.keys()].sort((a,b) => gran === "month" ? a-b : (a < b ? -1 : 1));
-  return { keys, labels: keys.map(k => map.get(k)) };
+  // index lets the chart builders do one pass instead of a nested filter
+  const index = new Map(keys.map((k,i) => [k, i]));
+  return { keys, index, labels: keys.map(k => map.get(k)) };
 }
 
 const CURRENCY = { AU: "A$", NZ: "NZ$" };
@@ -492,6 +494,9 @@ async function loadData(){
       return {
         country: f.country,
         wk_start: f.wk_start,
+        // precomputed once: avoids millions of new Date() calls per render
+        mkey: monthInfo(f.wk_start).key,
+        qkey: quarterInfo(f.wk_start).key,
         item: f.item,
         description: itemMap.get(f.item) || "",
         store: f.store,
@@ -509,6 +514,7 @@ async function loadData(){
       el.textContent = "Connected to Supabase, but no rows found yet in bunnings_weekly_inventory. Import a weekly CSV to see data here.";
     }
 
+    indexWeeks();
     buildFilters();
     const secs = ((performance.now() - started)/1000).toFixed(1);
     document.getElementById("lastUpdated").textContent =
@@ -525,21 +531,41 @@ async function loadData(){
 
 let storeSel, quarterSel, monthFromSel, monthToSel, weekFromSel, weekToSel;
 
+let weekCache = {};
 function allWeeksSorted(){
-  return [...new Set(rows.filter(r => r.country === country).map(r => r.wk_start))].sort();
+  if(!weekCache[country]){
+    weekCache[country] = [...new Set(rows.filter(r => r.country === country).map(r => r.wk_start))].sort();
+  }
+  return weekCache[country];
 }
 
 // Weeks available given the currently selected quarter
+// week -> month/quarter key, built once per country from the loaded rows.
+// Avoids re-parsing dates every time a dropdown is rebuilt.
+let weekMonthKey = new Map();
+let weekQuarterKey = new Map();
+function indexWeeks(){
+  weekMonthKey = new Map();
+  weekQuarterKey = new Map();
+  for(const r of rows){
+    if(!weekMonthKey.has(r.wk_start)){
+      weekMonthKey.set(r.wk_start, r.mkey);
+      weekQuarterKey.set(r.wk_start, r.qkey);
+    }
+  }
+}
+
 function weeksInQuarter(){
   const all = allWeeksSorted();
   if(filters.quarter === "all") return all;
-  return all.filter(w => quarterInfo(w).key === Number(filters.quarter));
+  const q = Number(filters.quarter);
+  return all.filter(w => weekQuarterKey.get(w) === q);
 }
 
 // Weeks available given quarter AND the selected month range
 function weeksInMonthRange(){
   return weeksInQuarter().filter(w => {
-    const k = monthInfo(w).key;
+    const k = weekMonthKey.get(w);
     return k >= filters.monthFrom && k <= filters.monthTo;
   });
 }
@@ -568,9 +594,8 @@ function rebuildStateChips(){
 // Rebuild the Quarter list for the active country
 function rebuildQuarterOptions(){
   const qMap = new Map();
-  rows.filter(r => r.country === country).forEach(r => {
-    const qi = quarterInfo(r.wk_start);
-    qMap.set(qi.key, qi.label);
+  allWeeksSorted().forEach(w => {
+    qMap.set(weekQuarterKey.get(w), quarterInfo(w).label);
   });
   quarterSel.innerHTML = optTag("all", "All Quarters") +
     [...qMap.entries()].sort((a,b) => a[0]-b[0]).map(e => optTag(e[0], e[1])).join("");
@@ -593,8 +618,7 @@ function refreshStoreOptions(){
 function refreshMonthOptions(){
   const mMap = new Map();
   weeksInQuarter().forEach(w => {
-    const mi = monthInfo(w);
-    mMap.set(mi.key, mi.label);
+    mMap.set(weekMonthKey.get(w), monthInfo(w).label);
   });
   const entries = [...mMap.entries()].sort((a,b) => a[0]-b[0]);
   const keys = entries.map(e => e[0]);
@@ -781,14 +805,15 @@ function buildFilters(){
 }
 
 function applyFilters(){
+  const qFilterNum = Number(filters.quarter);
   return rows.filter(r =>
     r.country === country &&
     (filters.state === "all" || r.state === filters.state) &&
     (filters.type === "all" || r.order_type === filters.type) &&
     (filters.store === "all" || r.store === filters.store) &&
     (!filters.weekFrom || !filters.weekTo || (r.wk_start >= filters.weekFrom && r.wk_start <= filters.weekTo)) &&
-    (filters.quarter === "all" || quarterInfo(r.wk_start).key === Number(filters.quarter)) &&
-    (filters.monthFrom === null || filters.monthTo === null || (monthInfo(r.wk_start).key >= filters.monthFrom && monthInfo(r.wk_start).key <= filters.monthTo))
+    (filters.quarter === "all" || r.qkey === qFilterNum) &&
+    (filters.monthFrom === null || filters.monthTo === null || (r.mkey >= filters.monthFrom && r.mkey <= filters.monthTo))
   );
 }
 
@@ -818,10 +843,19 @@ function render(){
 function renderStateTrend(f){
   const buckets = getBuckets(f, stateGranularity);
   const states = [...new Set(f.map(r => r.state))].sort();
+  const n = buckets.keys.length;
+
+  // one pass over the rows, accumulating straight into each series array
+  const series = new Map(states.map(s => [s, new Array(n).fill(0)]));
+  for(const r of f){
+    const i = buckets.index.get(bucketKey(r, stateGranularity));
+    if(i === undefined) continue;
+    series.get(r.state)[i] += Number(r[stateMetric]) || 0;
+  }
+
   const datasets = states.map((s,i) => ({
     label: s,
-    data: buckets.keys.map(k => f.filter(r => r.state === s && bucketKey(r.wk_start, stateGranularity) === k)
-      .reduce((sum,r) => sum + Number(r[stateMetric]||0), 0)),
+    data: series.get(s),
     borderColor: stateColor(s,i),
     backgroundColor: stateColor(s,i),
     tension: 0.3,
@@ -830,7 +864,7 @@ function renderStateTrend(f){
 
   const ctx = document.getElementById("stateTrendChart");
   if(stateChart) stateChart.destroy();
-  if(buckets.keys.length === 0){ return; }
+  if(n === 0){ return; }
   stateChart = new Chart(ctx, {
     type: "line",
     data: { labels: buckets.labels, datasets },
@@ -839,20 +873,31 @@ function renderStateTrend(f){
 }
 
 function renderStoreTrend(f){
-  const totalsByStore = {};
-  f.forEach(r => {
-    totalsByStore[r.store] = (totalsByStore[r.store]||0) + Number(r.sales_value||0);
-  });
-  const topStoreIds = Object.entries(totalsByStore)
-    .sort((a,b) => b[1]-a[1]).slice(0,10).map(([id]) => id);
-  const storeNames = {};
-  f.forEach(r => { storeNames[r.store] = r.store_name; });
-
   const buckets = getBuckets(f, storeGranularity);
-  const datasets = topStoreIds.map((id,i) => ({
-    label: storeNames[id],
-    data: buckets.keys.map(k => f.filter(r => r.store === id && bucketKey(r.wk_start, storeGranularity) === k)
-      .reduce((sum,r) => sum + Number(r[storeMetric]||0), 0)),
+  const n = buckets.keys.length;
+
+  // pass 1: totals + names per store
+  const totals = new Map();
+  const names = new Map();
+  for(const r of f){
+    totals.set(r.store, (totals.get(r.store) || 0) + (Number(r.sales_value) || 0));
+    if(!names.has(r.store)) names.set(r.store, r.store_name);
+  }
+  const top = [...totals.entries()].sort((a,b) => b[1]-a[1]).slice(0,10).map(e => e[0]);
+  const topSet = new Set(top);
+
+  // pass 2: fill the 10 series in one sweep
+  const series = new Map(top.map(id => [id, new Array(n).fill(0)]));
+  for(const r of f){
+    if(!topSet.has(r.store)) continue;
+    const i = buckets.index.get(bucketKey(r, storeGranularity));
+    if(i === undefined) continue;
+    series.get(r.store)[i] += Number(r[storeMetric]) || 0;
+  }
+
+  const datasets = top.map((id,i) => ({
+    label: names.get(id),
+    data: series.get(id),
     borderColor: stateColor(id,i),
     backgroundColor: stateColor(id,i),
     tension: 0.3,
@@ -861,7 +906,7 @@ function renderStoreTrend(f){
 
   const ctx = document.getElementById("storeTrendChart");
   if(storeChart) storeChart.destroy();
-  if(buckets.keys.length === 0){ return; }
+  if(n === 0){ return; }
   storeChart = new Chart(ctx, {
     type: "line",
     data: { labels: buckets.labels, datasets },
