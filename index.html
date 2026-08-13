@@ -179,6 +179,7 @@
   .kpi.retail .value{ color:var(--retail); }
 
   .panel{
+    overflow-x:auto;
     background:var(--panel);
     border:1px solid var(--panel-border);
     border-radius:12px;
@@ -226,6 +227,22 @@
   }
   @media (max-width:920px){
     .grid-2{ grid-template-columns:1fr; }
+  }
+  /* phones: the page was overflowing to ~473px on a 390px screen */
+  @media (max-width:600px){
+    header{ padding:16px 12px 12px; }
+    header h1{ font-size:18px; }
+    #latestWeek, #lastUpdated{ text-align:left; }
+    .country-tabs{ padding:12px 12px 0; }
+    .country-tabs button{ min-width:0; flex:1; }
+    .filters{ padding:12px; gap:8px; }
+    main{ padding:16px 12px 32px; }
+    .panel{ padding:14px 12px; }
+    .kpi-row{ gap:10px; }
+    table{ font-size:12px; }
+    th, td{ padding:6px 8px; }
+    canvas{ max-height:240px; }
+    select{ max-width:150px; }
   }
 
   table{
@@ -615,6 +632,18 @@ function weeksInMonthRange(){
   });
 }
 
+// Distribution / returns sites are not stores a rep can visit, and a returns
+// centre with huge stock and zero sales would permanently head the No Movement
+// list. Wacol is deliberately KEPT: it is a Trade Centre with real trade sales.
+// Combined these sites are ~0.06% of sales, so excluding them barely moves totals.
+function isRealStore(name){
+  if(!name) return true;
+  if(/returns centre/i.test(name)) return false;
+  if(/^crc\b/i.test(name)) return false;
+  if(/fulfilment centre/i.test(name) && !/trade/i.test(name)) return false;
+  return true;
+}
+
 function optTag(value, label){
   return '<option value="' + value + '">' + label + '</option>';
 }
@@ -648,7 +677,7 @@ function rebuildQuarterOptions(){
 
 // Rebuild Store list from the selected State
 function refreshStoreOptions(){
-  const scoped = rows.filter(r => r.country === country && (filters.state === "all" || r.state === filters.state));
+  const scoped = rows.filter(r => r.country === country && isRealStore(r.store_name) && (filters.state === "all" || r.state === filters.state));
   const list = [...new Map(scoped.map(r => [r.store, r.store_name])).entries()]
     .sort((a,b) => a[1].localeCompare(b[1]));
   storeSel.innerHTML = optTag("all", "All Stores") +
@@ -863,6 +892,7 @@ function applyFilters(){
   const qFilterNum = Number(filters.quarter);
   return rows.filter(r =>
     r.country === country &&
+    isRealStore(r.store_name) &&
     (filters.state === "all" || r.state === filters.state) &&
     (filters.type === "all" || r.order_type === filters.type) &&
     (filters.store === "all" || r.store === filters.store) &&
