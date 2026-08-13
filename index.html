@@ -148,6 +148,10 @@
     justify-content:space-between;
     align-items:center;
   }
+  .panel h2 .toggle-row{
+    display:flex;
+    gap:10px;
+  }
   .panel h2 .toggle{
     display:flex;
     gap:6px;
@@ -293,9 +297,15 @@
   <div class="panel">
     <h2>
       Trend Per State
-      <span class="toggle" id="stateMetricToggle">
-        <span class="active" data-metric="sales_value">$</span>
-        <span data-metric="units_sold">Units</span>
+      <span class="toggle-row">
+        <span class="toggle" id="stateGranularityToggle">
+          <span class="active" data-gran="week">Weekly</span>
+          <span data-gran="month">Monthly</span>
+        </span>
+        <span class="toggle" id="stateMetricToggle">
+          <span class="active" data-metric="sales_value">$</span>
+          <span data-metric="units_sold">Units</span>
+        </span>
       </span>
     </h2>
     <canvas id="stateTrendChart"></canvas>
@@ -304,9 +314,15 @@
   <div class="panel">
     <h2>
       Trend Per Store — Top 10 by $
-      <span class="toggle" id="storeMetricToggle">
-        <span class="active" data-metric="sales_value">$</span>
-        <span data-metric="units_sold">Units</span>
+      <span class="toggle-row">
+        <span class="toggle" id="storeGranularityToggle">
+          <span class="active" data-gran="week">Weekly</span>
+          <span data-gran="month">Monthly</span>
+        </span>
+        <span class="toggle" id="storeMetricToggle">
+          <span class="active" data-metric="sales_value">$</span>
+          <span data-metric="units_sold">Units</span>
+        </span>
       </span>
     </h2>
     <canvas id="storeTrendChart"></canvas>
@@ -358,7 +374,25 @@ function monthInfo(wk){
 }
 let stateMetric = "sales_value";
 let storeMetric = "sales_value";
+let stateGranularity = "week";
+let storeGranularity = "week";
 let stateChart, storeChart;
+
+function bucketKey(wk, gran){
+  return gran === "month" ? monthInfo(wk).key : wk;
+}
+function bucketLabel(wk, gran){
+  return gran === "month" ? monthInfo(wk).label : fmtWeek(wk);
+}
+function getBuckets(f, gran){
+  const map = new Map();
+  f.forEach(r => {
+    const k = bucketKey(r.wk_start, gran);
+    if(!map.has(k)) map.set(k, bucketLabel(r.wk_start, gran));
+  });
+  const keys = [...map.keys()].sort((a,b) => gran === "month" ? a-b : (a < b ? -1 : 1));
+  return { keys, labels: keys.map(k => map.get(k)) };
+}
 
 const fmtMoney = n => "$" + Math.round(n).toLocaleString();
 const fmtNum = n => Math.round(n).toLocaleString();
@@ -455,6 +489,22 @@ function buildFilters(){
     });
   });
 
+  document.getElementById("stateGranularityToggle").querySelectorAll("span").forEach(el => {
+    el.addEventListener("click", () => {
+      document.querySelectorAll("#stateGranularityToggle span").forEach(s => s.classList.remove("active"));
+      el.classList.add("active");
+      stateGranularity = el.dataset.gran;
+      render();
+    });
+  });
+  document.getElementById("storeGranularityToggle").querySelectorAll("span").forEach(el => {
+    el.addEventListener("click", () => {
+      document.querySelectorAll("#storeGranularityToggle span").forEach(s => s.classList.remove("active"));
+      el.classList.add("active");
+      storeGranularity = el.dataset.gran;
+      render();
+    });
+  });
   document.getElementById("stateMetricToggle").querySelectorAll("span").forEach(el => {
     el.addEventListener("click", () => {
       document.querySelectorAll("#stateMetricToggle span").forEach(s => s.classList.remove("active"));
@@ -508,11 +558,11 @@ function render(){
 }
 
 function renderStateTrend(f){
-  const weeks = [...new Set(f.map(r => r.wk_start))].sort();
+  const buckets = getBuckets(f, stateGranularity);
   const states = [...new Set(f.map(r => r.state))].sort();
   const datasets = states.map((s,i) => ({
     label: s,
-    data: weeks.map(w => f.filter(r => r.state === s && r.wk_start === w)
+    data: buckets.keys.map(k => f.filter(r => r.state === s && bucketKey(r.wk_start, stateGranularity) === k)
       .reduce((sum,r) => sum + Number(r[stateMetric]||0), 0)),
     borderColor: stateColor(s,i),
     backgroundColor: stateColor(s,i),
@@ -522,10 +572,10 @@ function renderStateTrend(f){
 
   const ctx = document.getElementById("stateTrendChart");
   if(stateChart) stateChart.destroy();
-  if(weeks.length === 0){ return; }
+  if(buckets.keys.length === 0){ return; }
   stateChart = new Chart(ctx, {
     type: "line",
-    data: { labels: weeks.map(fmtWeek), datasets },
+    data: { labels: buckets.labels, datasets },
     options: chartOpts(stateMetric)
   });
 }
@@ -540,10 +590,10 @@ function renderStoreTrend(f){
   const storeNames = {};
   f.forEach(r => { storeNames[r.store] = r.store_name; });
 
-  const weeks = [...new Set(f.map(r => r.wk_start))].sort();
+  const buckets = getBuckets(f, storeGranularity);
   const datasets = topStoreIds.map((id,i) => ({
     label: storeNames[id],
-    data: weeks.map(w => f.filter(r => r.store === id && r.wk_start === w)
+    data: buckets.keys.map(k => f.filter(r => r.store === id && bucketKey(r.wk_start, storeGranularity) === k)
       .reduce((sum,r) => sum + Number(r[storeMetric]||0), 0)),
     borderColor: stateColor(id,i),
     backgroundColor: stateColor(id,i),
@@ -553,10 +603,10 @@ function renderStoreTrend(f){
 
   const ctx = document.getElementById("storeTrendChart");
   if(storeChart) storeChart.destroy();
-  if(weeks.length === 0){ return; }
+  if(buckets.keys.length === 0){ return; }
   storeChart = new Chart(ctx, {
     type: "line",
-    data: { labels: weeks.map(fmtWeek), datasets },
+    data: { labels: buckets.labels, datasets },
     options: chartOpts(storeMetric)
   });
 }
