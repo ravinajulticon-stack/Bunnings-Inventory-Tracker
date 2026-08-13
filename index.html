@@ -409,31 +409,74 @@ const fmtWeek = d => {
   return dt.toLocaleDateString("en-AU", { day:"2-digit", month:"short" });
 };
 
+const PAGE_SIZE = 50000;
+
+function sbFetch(path){
+  return fetch(SUPABASE_URL + "/rest/v1/" + path, {
+    headers: { apikey: SUPABASE_KEY, Authorization: "Bearer " + SUPABASE_KEY }
+  }).then(r => {
+    if(!r.ok) throw new Error("Supabase returned " + r.status);
+    return r.json();
+  });
+}
+
 async function loadData(){
+  const started = performance.now();
   try{
-    let all = [];
-    let from = 0;
-    const pageSize = 1000;
-    while(true){
-      const res = await fetch(
-        `${SUPABASE_URL}/rest/v1/bunnings_weekly_view?select=*&order=wk_start.asc&offset=${from}&limit=${pageSize}`,
-        { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
-      );
-      if(!res.ok) throw new Error(`Supabase returned ${res.status}`);
-      const chunk = await res.json();
-      all = all.concat(chunk);
-      if(chunk.length < pageSize) break;
-      from += pageSize;
+    // How many fact rows are there? (cheap HEAD-style count)
+    const cntRes = await fetch(SUPABASE_URL + "/rest/v1/bunnings_facts?select=wk_start&limit=1", {
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: "Bearer " + SUPABASE_KEY,
+        Prefer: "count=exact"
+      }
+    });
+    if(!cntRes.ok) throw new Error("Supabase returned " + cntRes.status);
+    const range = cntRes.headers.get("content-range") || "";
+    const totalRows = parseInt(range.split("/")[1], 10) || 0;
+
+    // Build all page requests up front and run them in parallel
+    const pageReqs = [];
+    for(let off = 0; off < totalRows; off += PAGE_SIZE){
+      pageReqs.push(sbFetch("bunnings_facts?select=*&order=wk_start.asc&offset=" + off + "&limit=" + PAGE_SIZE));
     }
-    rows = all;
+
+    const [stores, items, ...factPages] = await Promise.all([
+      sbFetch("bunnings_stores?select=*"),
+      sbFetch("bunnings_items?select=*"),
+      ...pageReqs
+    ]);
+
+    // Lookup maps so each fact row stays tiny over the wire
+    const storeMap = new Map(stores.map(s => [s.store, s]));
+    const itemMap = new Map(items.map(i => [i.item, i.description]));
+
+    rows = factPages.flat().map(f => {
+      const s = storeMap.get(f.store) || {};
+      return {
+        wk_start: f.wk_start,
+        item: f.item,
+        description: itemMap.get(f.item) || "",
+        store: f.store,
+        store_name: s.store_name || f.store,
+        state: s.state || "",
+        order_type: s.order_type || "Bunnings Retail",
+        units_sold: Number(f.units_sold) || 0,
+        sales_value: Number(f.sales_value) || 0
+      };
+    });
+
     if(rows.length === 0){
-      document.getElementById("loadError").style.display = "block";
-      document.getElementById("loadError").textContent =
-        "Connected to Supabase, but no rows found yet in bunnings_weekly_inventory. Import a weekly CSV to see data here.";
+      const el = document.getElementById("loadError");
+      el.style.display = "block";
+      el.textContent = "Connected to Supabase, but no rows found yet in bunnings_weekly_inventory. Import a weekly CSV to see data here.";
     }
+
     buildFilters();
+    const secs = ((performance.now() - started)/1000).toFixed(1);
     document.getElementById("lastUpdated").textContent =
-      "Data as of " + new Date().toLocaleString("en-AU", { dateStyle:"medium", timeStyle:"short" });
+      "Data as of " + new Date().toLocaleString("en-AU", { dateStyle:"medium", timeStyle:"short" }) +
+      "  \u00b7  " + rows.length.toLocaleString() + " rows in " + secs + "s";
     render();
   }catch(err){
     const el = document.getElementById("loadError");
