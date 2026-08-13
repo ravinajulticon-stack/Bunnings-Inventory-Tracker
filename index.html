@@ -267,6 +267,8 @@
 
   <span class="filter-label" style="margin-left:6px;">To</span>
   <select id="weekToFilter"></select>
+
+  <span class="chip" id="resetFilters" style="margin-left:14px;">Reset</span>
 </div>
 
 <main>
@@ -441,66 +443,188 @@ async function loadData(){
   }
 }
 
+let storeSel, quarterSel, monthFromSel, monthToSel, weekFromSel, weekToSel;
+
+function allWeeksSorted(){
+  return [...new Set(rows.map(r => r.wk_start))].sort();
+}
+
+// Weeks available given the currently selected quarter
+function weeksInQuarter(){
+  const all = allWeeksSorted();
+  if(filters.quarter === "all") return all;
+  return all.filter(w => quarterInfo(w).key === Number(filters.quarter));
+}
+
+// Weeks available given quarter AND the selected month range
+function weeksInMonthRange(){
+  return weeksInQuarter().filter(w => {
+    const k = monthInfo(w).key;
+    return k >= filters.monthFrom && k <= filters.monthTo;
+  });
+}
+
+function optTag(value, label){
+  return '<option value="' + value + '">' + label + '</option>';
+}
+
+// Rebuild Store list from the selected State
+function refreshStoreOptions(){
+  const scoped = rows.filter(r => filters.state === "all" || r.state === filters.state);
+  const list = [...new Map(scoped.map(r => [r.store, r.store_name])).entries()]
+    .sort((a,b) => a[1].localeCompare(b[1]));
+  storeSel.innerHTML = optTag("all", "All Stores") +
+    list.map(e => optTag(e[0], e[1])).join("");
+  if(filters.store !== "all" && !list.some(e => e[0] === filters.store)){
+    filters.store = "all";
+  }
+  storeSel.value = filters.store;
+}
+
+// Rebuild Month From/To from the selected Quarter
+function refreshMonthOptions(){
+  const mMap = new Map();
+  weeksInQuarter().forEach(w => {
+    const mi = monthInfo(w);
+    mMap.set(mi.key, mi.label);
+  });
+  const entries = [...mMap.entries()].sort((a,b) => a[0]-b[0]);
+  const keys = entries.map(e => e[0]);
+  const opts = entries.map(e => optTag(e[0], e[1])).join("");
+  monthFromSel.innerHTML = opts;
+  monthToSel.innerHTML = opts;
+
+  if(!keys.includes(filters.monthFrom)) filters.monthFrom = keys[0];
+  if(!keys.includes(filters.monthTo)) filters.monthTo = keys[keys.length - 1];
+  if(filters.monthFrom > filters.monthTo){
+    filters.monthFrom = keys[0];
+    filters.monthTo = keys[keys.length - 1];
+  }
+  monthFromSel.value = filters.monthFrom;
+  monthToSel.value = filters.monthTo;
+}
+
+// Rebuild Week From/To from Quarter + Month range
+function refreshWeekOptions(){
+  const weeks = weeksInMonthRange();
+  const opts = weeks.map(w => optTag(w, fmtWeek(w) + " \u2019" + w.slice(2,4))).join("");
+  weekFromSel.innerHTML = opts;
+  weekToSel.innerHTML = opts;
+
+  if(!weeks.includes(filters.weekFrom)) filters.weekFrom = weeks[0];
+  if(!weeks.includes(filters.weekTo)) filters.weekTo = weeks[weeks.length - 1];
+  if(filters.weekFrom > filters.weekTo){
+    filters.weekFrom = weeks[0];
+    filters.weekTo = weeks[weeks.length - 1];
+  }
+  weekFromSel.value = filters.weekFrom;
+  weekToSel.value = filters.weekTo;
+}
+
 function buildFilters(){
+  storeSel = document.getElementById("storeFilter");
+  quarterSel = document.getElementById("quarterFilter");
+  monthFromSel = document.getElementById("monthFromFilter");
+  monthToSel = document.getElementById("monthToFilter");
+  weekFromSel = document.getElementById("weekFromFilter");
+  weekToSel = document.getElementById("weekToFilter");
+
+  // State chips -> cascade into Store list
   const states = [...new Set(rows.map(r => r.state))].sort();
   const stateWrap = document.getElementById("stateFilters");
-  stateWrap.innerHTML = `<span class="chip active" data-state="all">All</span>` +
-    states.map(s => `<span class="chip" data-state="${s}">${s}</span>`).join("");
+  stateWrap.innerHTML = '<span class="chip active" data-state="all">All</span>' +
+    states.map(s => '<span class="chip" data-state="' + s + '">' + s + '</span>').join("");
   stateWrap.querySelectorAll(".chip").forEach(chip => {
     chip.addEventListener("click", () => {
       stateWrap.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
       chip.classList.add("active");
       filters.state = chip.dataset.state;
+      refreshStoreOptions();
       render();
     });
   });
 
-  const stores = [...new Map(rows.map(r => [r.store, r.store_name])).entries()]
-    .sort((a,b) => a[1].localeCompare(b[1]));
-  const storeSel = document.getElementById("storeFilter");
-  storeSel.innerHTML = `<option value="all">All Stores</option>` +
-    stores.map(([id,name]) => `<option value="${id}">${name}</option>`).join("");
   storeSel.addEventListener("change", () => { filters.store = storeSel.value; render(); });
 
+  // Quarter options (full list, always available)
   const qMap = new Map();
-  const mMap = new Map();
   rows.forEach(r => {
     const qi = quarterInfo(r.wk_start);
     qMap.set(qi.key, qi.label);
-    const mi = monthInfo(r.wk_start);
-    mMap.set(mi.key, mi.label);
   });
-  const quarterSel = document.getElementById("quarterFilter");
-  quarterSel.innerHTML = `<option value="all">All Quarters</option>` +
-    [...qMap.entries()].sort((a,b) => a[0]-b[0]).map(([k,l]) => `<option value="${k}">${l}</option>`).join("");
-  quarterSel.addEventListener("change", () => { filters.quarter = quarterSel.value; render(); });
+  quarterSel.innerHTML = optTag("all", "All Quarters") +
+    [...qMap.entries()].sort((a,b) => a[0]-b[0]).map(e => optTag(e[0], e[1])).join("");
 
-  const monthEntries = [...mMap.entries()].sort((a,b) => a[0]-b[0]);
-  const monthOptions = monthEntries.map(([k,l]) => `<option value="${k}">${l}</option>`).join("");
-  const monthFromSel = document.getElementById("monthFromFilter");
-  const monthToSel = document.getElementById("monthToFilter");
-  monthFromSel.innerHTML = monthOptions;
-  monthToSel.innerHTML = monthOptions;
-  monthFromSel.value = monthEntries[0][0];
-  monthToSel.value = monthEntries[monthEntries.length - 1][0];
-  filters.monthFrom = monthEntries[0][0];
-  filters.monthTo = monthEntries[monthEntries.length - 1][0];
-  monthFromSel.addEventListener("change", () => { filters.monthFrom = Number(monthFromSel.value); render(); });
-  monthToSel.addEventListener("change", () => { filters.monthTo = Number(monthToSel.value); render(); });
+  // Quarter -> cascade into Months, then Weeks
+  quarterSel.addEventListener("change", () => {
+    filters.quarter = quarterSel.value;
+    filters.monthFrom = null;
+    filters.monthTo = null;
+    filters.weekFrom = null;
+    filters.weekTo = null;
+    refreshMonthOptions();
+    refreshWeekOptions();
+    render();
+  });
 
-  const weeks = [...new Set(rows.map(r => r.wk_start))].sort();
-  const weekOptions = weeks.map(w => `<option value="${w}">${fmtWeek(w)} '${w.slice(2,4)}</option>`).join("");
+  // Month range -> cascade into Weeks
+  monthFromSel.addEventListener("change", () => {
+    filters.monthFrom = Number(monthFromSel.value);
+    if(filters.monthFrom > filters.monthTo){
+      filters.monthTo = filters.monthFrom;
+      monthToSel.value = filters.monthTo;
+    }
+    refreshWeekOptions();
+    render();
+  });
+  monthToSel.addEventListener("change", () => {
+    filters.monthTo = Number(monthToSel.value);
+    if(filters.monthTo < filters.monthFrom){
+      filters.monthFrom = filters.monthTo;
+      monthFromSel.value = filters.monthFrom;
+    }
+    refreshWeekOptions();
+    render();
+  });
 
-  const weekFromSel = document.getElementById("weekFromFilter");
-  const weekToSel = document.getElementById("weekToFilter");
-  weekFromSel.innerHTML = weekOptions;
-  weekToSel.innerHTML = weekOptions;
-  weekFromSel.value = weeks[0];
-  weekToSel.value = weeks[weeks.length - 1];
-  filters.weekFrom = weeks[0];
-  filters.weekTo = weeks[weeks.length - 1];
-  weekFromSel.addEventListener("change", () => { filters.weekFrom = weekFromSel.value; render(); });
-  weekToSel.addEventListener("change", () => { filters.weekTo = weekToSel.value; render(); });
+  // Week range (clamped to stay valid)
+  weekFromSel.addEventListener("change", () => {
+    filters.weekFrom = weekFromSel.value;
+    if(filters.weekFrom > filters.weekTo){
+      filters.weekTo = filters.weekFrom;
+      weekToSel.value = filters.weekTo;
+    }
+    render();
+  });
+  weekToSel.addEventListener("change", () => {
+    filters.weekTo = weekToSel.value;
+    if(filters.weekTo < filters.weekFrom){
+      filters.weekFrom = filters.weekTo;
+      weekFromSel.value = filters.weekFrom;
+    }
+    render();
+  });
+
+  // Reset all filters
+  document.getElementById("resetFilters").addEventListener("click", () => {
+    filters.state = "all";
+    filters.type = "all";
+    filters.store = "all";
+    filters.quarter = "all";
+    filters.monthFrom = null;
+    filters.monthTo = null;
+    filters.weekFrom = null;
+    filters.weekTo = null;
+    stateWrap.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
+    stateWrap.querySelector('[data-state="all"]').classList.add("active");
+    document.querySelectorAll("#typeFilters .chip").forEach(c => c.classList.remove("active"));
+    document.querySelector('#typeFilters [data-type="all"]').classList.add("active");
+    quarterSel.value = "all";
+    refreshStoreOptions();
+    refreshMonthOptions();
+    refreshWeekOptions();
+    render();
+  });
 
   document.getElementById("typeFilters").querySelectorAll(".chip").forEach(chip => {
     chip.addEventListener("click", () => {
@@ -511,38 +635,34 @@ function buildFilters(){
     });
   });
 
-  document.getElementById("stateGranularityToggle").querySelectorAll("span").forEach(el => {
-    el.addEventListener("click", () => {
-      document.querySelectorAll("#stateGranularityToggle span").forEach(s => s.classList.remove("active"));
-      el.classList.add("active");
-      stateGranularity = el.dataset.gran;
-      render();
+  ["stateGranularityToggle","storeGranularityToggle"].forEach(id => {
+    document.getElementById(id).querySelectorAll("span").forEach(el => {
+      el.addEventListener("click", () => {
+        document.querySelectorAll("#" + id + " span").forEach(s => s.classList.remove("active"));
+        el.classList.add("active");
+        if(id === "stateGranularityToggle"){ stateGranularity = el.dataset.gran; }
+        else { storeGranularity = el.dataset.gran; }
+        render();
+      });
     });
   });
-  document.getElementById("storeGranularityToggle").querySelectorAll("span").forEach(el => {
-    el.addEventListener("click", () => {
-      document.querySelectorAll("#storeGranularityToggle span").forEach(s => s.classList.remove("active"));
-      el.classList.add("active");
-      storeGranularity = el.dataset.gran;
-      render();
+
+  ["stateMetricToggle","storeMetricToggle"].forEach(id => {
+    document.getElementById(id).querySelectorAll("span").forEach(el => {
+      el.addEventListener("click", () => {
+        document.querySelectorAll("#" + id + " span").forEach(s => s.classList.remove("active"));
+        el.classList.add("active");
+        if(id === "stateMetricToggle"){ stateMetric = el.dataset.metric; }
+        else { storeMetric = el.dataset.metric; }
+        render();
+      });
     });
   });
-  document.getElementById("stateMetricToggle").querySelectorAll("span").forEach(el => {
-    el.addEventListener("click", () => {
-      document.querySelectorAll("#stateMetricToggle span").forEach(s => s.classList.remove("active"));
-      el.classList.add("active");
-      stateMetric = el.dataset.metric;
-      render();
-    });
-  });
-  document.getElementById("storeMetricToggle").querySelectorAll("span").forEach(el => {
-    el.addEventListener("click", () => {
-      document.querySelectorAll("#storeMetricToggle span").forEach(s => s.classList.remove("active"));
-      el.classList.add("active");
-      storeMetric = el.dataset.metric;
-      render();
-    });
-  });
+
+  // Initial population
+  refreshStoreOptions();
+  refreshMonthOptions();
+  refreshWeekOptions();
 }
 
 function applyFilters(){
