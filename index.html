@@ -358,6 +358,12 @@
   <span class="filter-label">State</span>
   <div class="filter-group" id="stateFilters"></div>
 
+  <span class="filter-label" style="margin-left:14px;">Order type</span>
+  <div class="filter-group" id="typeFilters">
+    <span class="chip active" data-type="all">All</span>
+    <span class="chip" data-type="Bunnings Trade">Trade</span>
+    <span class="chip" data-type="Bunnings Retail">Retail</span>
+  </div>
 
   <span class="filter-label" style="margin-left:14px;">Store</span>
   <select id="storeFilter"><option value="all">All Stores</option></select>
@@ -404,15 +410,15 @@
       <div class="value" id="kpiTotal">–</div>
       <div class="sub" id="kpiTotalSub">&nbsp;</div>
     </div>
-    <div class="kpi">
-      <div class="label">Avg Weekly $</div>
-      <div class="value" id="kpiAvgWeek">–</div>
-      <div class="sub" id="kpiAvgWeekSub">&nbsp;</div>
+    <div class="kpi trade">
+      <div class="label">Bunnings Trade</div>
+      <div class="value" id="kpiTrade">–</div>
+      <div class="sub" id="kpiTradeSub">&nbsp;</div>
     </div>
-    <div class="kpi">
-      <div class="label">SKUs Sold</div>
-      <div class="value" id="kpiSkus">–</div>
-      <div class="sub" id="kpiSkusSub">&nbsp;</div>
+    <div class="kpi retail">
+      <div class="label">Bunnings Retail</div>
+      <div class="value" id="kpiRetail">–</div>
+      <div class="sub" id="kpiRetailSub">&nbsp;</div>
     </div>
     <div class="kpi">
       <div class="label">Active Stores</div>
@@ -471,7 +477,7 @@
       </h2>
       <table>
         <thead>
-          <tr><th>Store</th><th>State</th><th class="num">$ Total</th></tr>
+          <tr><th>Store</th><th>State</th><th>Type</th><th class="num">$ Total</th></tr>
         </thead>
         <tbody id="topStoresBody"></tbody>
       </table>
@@ -494,7 +500,7 @@
     </h2>
     <table>
       <thead>
-        <tr><th>Store</th><th>State</th><th class="num">Stock on Hand</th><th class="num">SOH Value</th></tr>
+        <tr><th>Store</th><th>State</th><th>Type</th><th class="num">Stock on Hand</th><th class="num">SOH Value</th></tr>
       </thead>
       <tbody id="noMoveBody"></tbody>
     </table>
@@ -512,7 +518,7 @@ const STATE_COLORS = {
 const stateColor = (s, i) => STATE_COLORS[s] || `hsl(${(i*57)%360} 70% 60%)`;
 
 let rows = [];
-let filters = { state: "all", store: "all", weekFrom: null, weekTo: null, quarter: "all", monthFrom: null, monthTo: null };
+let filters = { state: "all", type: "all", store: "all", weekFrom: null, weekTo: null, quarter: "all", monthFrom: null, monthTo: null };
 
 function quarterInfo(wk){
   const d = new Date(wk + "T00:00:00");
@@ -848,6 +854,7 @@ function buildFilters(){
   // Reset all filters
   document.getElementById("resetFilters").addEventListener("click", () => {
     filters.state = "all";
+    filters.type = "all";
     filters.store = "all";
     filters.quarter = "all";
     filters.monthFrom = null;
@@ -855,6 +862,8 @@ function buildFilters(){
     filters.weekFrom = null;
     filters.weekTo = null;
     rebuildStateChips();
+    document.querySelectorAll("#typeFilters .chip").forEach(c => c.classList.remove("active"));
+    document.querySelector('#typeFilters [data-type="all"]').classList.add("active");
     quarterSel.value = "all";
     refreshStoreOptions();
     refreshMonthOptions();
@@ -871,6 +880,14 @@ function buildFilters(){
     });
   });
 
+  document.getElementById("typeFilters").querySelectorAll(".chip").forEach(chip => {
+    chip.addEventListener("click", () => {
+      document.querySelectorAll("#typeFilters .chip").forEach(c => c.classList.remove("active"));
+      chip.classList.add("active");
+      filters.type = chip.dataset.type;
+      render();
+    });
+  });
 
   ["stateGranularityToggle","storeGranularityToggle"].forEach(id => {
     document.getElementById(id).querySelectorAll("span").forEach(el => {
@@ -904,13 +921,16 @@ function buildFilters(){
       country = btn.dataset.country;
       // country changes the whole universe of stores/states/weeks, so reset
       filters.state = "all";
-        filters.store = "all";
+      filters.type = "all";
+      filters.store = "all";
       filters.quarter = "all";
       filters.monthFrom = null;
       filters.monthTo = null;
       filters.weekFrom = null;
       filters.weekTo = null;
       quarterSel.value = "all";
+      document.querySelectorAll("#typeFilters .chip").forEach(c => c.classList.remove("active"));
+      document.querySelector('#typeFilters [data-type="all"]').classList.add("active");
       rebuildStateChips();
       refreshStoreOptions();
       rebuildQuarterOptions();
@@ -933,6 +953,7 @@ function applyFilters(){
     r.country === country &&
     isRealStore(r.store_name) &&
     (filters.state === "all" || r.state === filters.state) &&
+    (filters.type === "all" || r.order_type === filters.type) &&
     (filters.store === "all" || r.store === filters.store) &&
     (!filters.weekFrom || !filters.weekTo || (r.wk_start >= filters.weekFrom && r.wk_start <= filters.weekTo)) &&
     (filters.quarter === "all" || r.qkey === qFilterNum) &&
@@ -965,18 +986,16 @@ function render(){
   const f = applyFilters();
 
   const total = f.reduce((s,r) => s + Number(r.sales_value||0), 0);
+  const trade = f.filter(r => r.order_type === "Bunnings Trade").reduce((s,r) => s + Number(r.sales_value||0), 0);
+  const retail = f.filter(r => r.order_type === "Bunnings Retail").reduce((s,r) => s + Number(r.sales_value||0), 0);
   const units = f.reduce((s,r) => s + Number(r.units_sold||0), 0);
   const stores = new Set(f.map(r => r.store)).size;
-  const weeksSel = new Set(f.map(r => r.wk_start)).size;
-  const skusSold = new Set(f.filter(r => Number(r.units_sold) > 0).map(r => r.item)).size;
-  const skusTotal = new Set(f.map(r => r.item)).size;
 
   document.getElementById("kpiTotal").textContent = fmtMoney(total);
-  document.getElementById("kpiAvgWeek").textContent = weeksSel ? fmtMoney(total/weeksSel) : fmtMoney(0);
-  document.getElementById("kpiAvgWeekSub").textContent =
-    weeksSel + " week" + (weeksSel === 1 ? "" : "s") + " selected";
-  document.getElementById("kpiSkus").textContent = fmtNum(skusSold);
-  document.getElementById("kpiSkusSub").textContent = "of " + fmtNum(skusTotal) + " ranged";
+  document.getElementById("kpiTrade").textContent = fmtMoney(trade);
+  document.getElementById("kpiTradeSub").textContent = total ? Math.round(trade/total*100) + "% of total" : "";
+  document.getElementById("kpiRetail").textContent = fmtMoney(retail);
+  document.getElementById("kpiRetailSub").textContent = total ? Math.round(retail/total*100) + "% of total" : "";
   document.getElementById("kpiStores").textContent = fmtNum(stores);
   document.getElementById("kpiUnits").textContent = fmtNum(units);
 
@@ -1105,8 +1124,10 @@ function renderTopStores(f){
 
   const body = document.getElementById("topStoresBody");
   body.innerHTML = rowsOut.length ? rowsOut.map(r => '<tr><td>' + r.name + '</td><td>' + r.state +
-    '</td><td class="num">' + fmtMoney(r.total) + '</td></tr>').join("")
-    : '<tr><td colspan="3" class="empty">No data for this selection</td></tr>';
+    '</td><td><span class="badge ' + (r.type === "Bunnings Trade" ? "trade" : "retail") + '">' +
+    (r.type === "Bunnings Trade" ? "Trade" : "Retail") + '</span></td><td class="num">' +
+    fmtMoney(r.total) + '</td></tr>').join("")
+    : '<tr><td colspan="4" class="empty">No data for this selection</td></tr>';
 }
 
 // Stores carrying stock but selling nothing in the selected period.
@@ -1128,9 +1149,10 @@ function renderNoMovement(f){
 
   const body = document.getElementById("noMoveBody");
   body.innerHTML = dead.length ? dead.slice(0,25).map(r => '<tr><td>' + r.name + '</td><td>' + r.state +
-    '</td><td class="num">' + fmtNum(r.soh) + '</td><td class="num">' + fmtMoney(r.sohVal) +
-    '</td></tr>').join("")
-    : '<tr><td colspan="4" class="empty">Every store sold at least one unit \u2014 nothing stalled</td></tr>';
+    '</td><td><span class="badge ' + (r.type === "Bunnings Trade" ? "trade" : "retail") + '">' +
+    (r.type === "Bunnings Trade" ? "Trade" : "Retail") + '</span></td><td class="num">' +
+    fmtNum(r.soh) + '</td><td class="num">' + fmtMoney(r.sohVal) + '</td></tr>').join("")
+    : '<tr><td colspan="5" class="empty">Every store sold at least one unit \u2014 nothing stalled</td></tr>';
 }
 
 function renderTopSkus(f){
