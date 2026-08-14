@@ -358,11 +358,11 @@
   <span class="filter-label">State</span>
   <div class="filter-group" id="stateFilters"></div>
 
-  <span class="filter-label" style="margin-left:14px;">Order type</span>
+  <span class="filter-label" style="margin-left:14px;">Site type</span>
   <div class="filter-group" id="typeFilters">
     <span class="chip active" data-type="all">All</span>
-    <span class="chip" data-type="Bunnings Trade">Trade</span>
-    <span class="chip" data-type="Bunnings Retail">Retail</span>
+    <span class="chip" data-type="Bunnings Trade">Trade Centre</span>
+    <span class="chip" data-type="Bunnings Retail">Retail Store</span>
   </div>
 
   <span class="filter-label" style="margin-left:14px;">Store</span>
@@ -411,12 +411,12 @@
       <div class="sub" id="kpiTotalSub">&nbsp;</div>
     </div>
     <div class="kpi trade">
-      <div class="label">Bunnings Trade</div>
+      <div class="label">Trade Centre Sites</div>
       <div class="value" id="kpiTrade">–</div>
       <div class="sub" id="kpiTradeSub">&nbsp;</div>
     </div>
     <div class="kpi retail">
-      <div class="label">Bunnings Retail</div>
+      <div class="label">Retail Stores</div>
       <div class="value" id="kpiRetail">–</div>
       <div class="sub" id="kpiRetailSub">&nbsp;</div>
     </div>
@@ -477,7 +477,7 @@
       </h2>
       <table>
         <thead>
-          <tr><th>Store</th><th>State</th><th>Type</th><th class="num">$ Total</th></tr>
+          <tr><th>Store</th><th>State</th><th>Site</th><th class="num">$ Total</th></tr>
         </thead>
         <tbody id="topStoresBody"></tbody>
       </table>
@@ -500,7 +500,7 @@
     </h2>
     <table>
       <thead>
-        <tr><th>Store</th><th>State</th><th>Type</th><th class="num">Stock on Hand</th><th class="num">SOH Value</th></tr>
+        <tr><th>Store</th><th>State</th><th>Site</th><th class="num">Stock on Hand</th><th class="num">SOH Value</th></tr>
       </thead>
       <tbody id="noMoveBody"></tbody>
     </table>
@@ -993,7 +993,7 @@ function render(){
 
   document.getElementById("kpiTotal").textContent = fmtMoney(total);
   document.getElementById("kpiTrade").textContent = fmtMoney(trade);
-  document.getElementById("kpiTradeSub").textContent = total ? Math.round(trade/total*100) + "% of total" : "";
+  document.getElementById("kpiTradeSub").textContent = total ? Math.round(trade/total*100) + "% of total \u00b7 site type, not order type" : "";
   document.getElementById("kpiRetail").textContent = fmtMoney(retail);
   document.getElementById("kpiRetailSub").textContent = total ? Math.round(retail/total*100) + "% of total" : "";
   document.getElementById("kpiStores").textContent = fmtNum(stores);
@@ -1125,7 +1125,7 @@ function renderTopStores(f){
   const body = document.getElementById("topStoresBody");
   body.innerHTML = rowsOut.length ? rowsOut.map(r => '<tr><td>' + r.name + '</td><td>' + r.state +
     '</td><td><span class="badge ' + (r.type === "Bunnings Trade" ? "trade" : "retail") + '">' +
-    (r.type === "Bunnings Trade" ? "Trade" : "Retail") + '</span></td><td class="num">' +
+    (r.type === "Bunnings Trade" ? "Trade Ctr" : "Retail") + '</span></td><td class="num">' +
     fmtMoney(r.total) + '</td></tr>').join("")
     : '<tr><td colspan="4" class="empty">No data for this selection</td></tr>';
 }
@@ -1150,7 +1150,7 @@ function renderNoMovement(f){
   const body = document.getElementById("noMoveBody");
   body.innerHTML = dead.length ? dead.slice(0,25).map(r => '<tr><td>' + r.name + '</td><td>' + r.state +
     '</td><td><span class="badge ' + (r.type === "Bunnings Trade" ? "trade" : "retail") + '">' +
-    (r.type === "Bunnings Trade" ? "Trade" : "Retail") + '</span></td><td class="num">' +
+    (r.type === "Bunnings Trade" ? "Trade Ctr" : "Retail") + '</span></td><td class="num">' +
     fmtNum(r.soh) + '</td><td class="num">' + fmtMoney(r.sohVal) + '</td></tr>').join("")
     : '<tr><td colspan="5" class="empty">Every store sold at least one unit \u2014 nothing stalled</td></tr>';
 }
