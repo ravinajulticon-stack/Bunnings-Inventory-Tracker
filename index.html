@@ -520,14 +520,29 @@ const stateColor = (s, i) => STATE_COLORS[s] || `hsl(${(i*57)%360} 70% 60%)`;
 let rows = [];
 let filters = { state: "all", type: "all", store: "all", weekFrom: null, weekTo: null, quarter: "all", monthFrom: null, monthTo: null };
 
+// Memoised by week: called once per ROW during rehydrate (130k+) but there are
+// only ~60 distinct weeks. toLocaleDateString is slow enough that skipping the
+// cache cost ~12s of page load on its own.
+const _qCache = new Map();
+const _mCache = new Map();
+
 function quarterInfo(wk){
+  let v = _qCache.get(wk);
+  if(v) return v;
   const d = new Date(wk + "T00:00:00");
   const q = Math.floor(d.getMonth() / 3) + 1;
-  return { key: d.getFullYear() * 10 + q, label: `Q${q} ${d.getFullYear()}` };
+  v = { key: d.getFullYear() * 10 + q, label: "Q" + q + " " + d.getFullYear() };
+  _qCache.set(wk, v);
+  return v;
 }
 function monthInfo(wk){
+  let v = _mCache.get(wk);
+  if(v) return v;
   const d = new Date(wk + "T00:00:00");
-  return { key: d.getFullYear() * 100 + d.getMonth(), label: d.toLocaleDateString("en-AU", { month: "short", year: "numeric" }) };
+  v = { key: d.getFullYear() * 100 + d.getMonth(),
+        label: d.toLocaleDateString("en-AU", { month: "short", year: "numeric" }) };
+  _mCache.set(wk, v);
+  return v;
 }
 let stateMetric = "sales_value";
 let storeMetric = "sales_value";
@@ -559,9 +574,13 @@ let country = "AU";
 const curSym = () => CURRENCY[country] || "$";
 const fmtMoney = n => curSym() + Math.round(n).toLocaleString();
 const fmtNum = n => Math.round(n).toLocaleString();
+const _wCache = new Map();
 const fmtWeek = d => {
-  const dt = new Date(d + "T00:00:00");
-  return dt.toLocaleDateString("en-AU", { day:"2-digit", month:"short" });
+  let v = _wCache.get(d);
+  if(v) return v;
+  v = new Date(d + "T00:00:00").toLocaleDateString("en-AU", { day:"2-digit", month:"short" });
+  _wCache.set(d, v);
+  return v;
 };
 
 const PAGE_SIZE = 25000;
