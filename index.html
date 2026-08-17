@@ -564,42 +564,76 @@ const fmtWeek = d => {
   return dt.toLocaleDateString("en-AU", { day:"2-digit", month:"short" });
 };
 
-const PAGE_SIZE = 50000;
+const PAGE_SIZE = 25000;
 
-function sbFetch(path){
-  return fetch(SUPABASE_URL + "/rest/v1/" + path, {
-    headers: { apikey: SUPABASE_KEY, Authorization: "Bearer " + SUPABASE_KEY }
-  }).then(r => {
-    if(!r.ok) throw new Error("Supabase returned " + r.status);
-    return r.json();
-  });
+// The NANO Supabase instance intermittently 500s when several large reads
+// land together (memory pressure, not a data problem). Retry before failing.
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function sbFetch(path, attempt = 0){
+  const MAX = 4;
+  try{
+    const r = await fetch(SUPABASE_URL + "/rest/v1/" + path, {
+      headers: { apikey: SUPABASE_KEY, Authorization: "Bearer " + SUPABASE_KEY }
+    });
+    if(!r.ok){
+      const retryable = r.status >= 500 || r.status === 429;
+      if(retryable && attempt < MAX){
+        await sleep(400 * Math.pow(2, attempt));
+        return sbFetch(path, attempt + 1);
+      }
+      throw new Error("Supabase returned " + r.status +
+        (attempt ? " after " + (attempt + 1) + " attempts" : ""));
+    }
+    return await r.json();
+  }catch(err){
+    if(err instanceof TypeError && attempt < MAX){
+      await sleep(400 * Math.pow(2, attempt));
+      return sbFetch(path, attempt + 1);
+    }
+    throw err;
+  }
 }
 
 async function loadData(){
   const started = performance.now();
   try{
     // How many fact rows are there? (cheap HEAD-style count)
-    const cntRes = await fetch(SUPABASE_URL + "/rest/v1/bunnings_facts?select=wk_start&limit=1", {
-      headers: {
-        apikey: SUPABASE_KEY,
-        Authorization: "Bearer " + SUPABASE_KEY,
-        Prefer: "count=exact"
+    let cntRes, cntTry = 0;
+    while(true){
+      cntRes = await fetch(SUPABASE_URL + "/rest/v1/bunnings_facts?select=wk_start&limit=1", {
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: "Bearer " + SUPABASE_KEY,
+          Prefer: "count=exact"
+        }
+      });
+      if(cntRes.ok) break;
+      if((cntRes.status >= 500 || cntRes.status === 429) && cntTry < 4){
+        await sleep(400 * Math.pow(2, cntTry++));
+        continue;
       }
-    });
-    if(!cntRes.ok) throw new Error("Supabase returned " + cntRes.status);
+      throw new Error("Supabase returned " + cntRes.status);
+    }
     const range = cntRes.headers.get("content-range") || "";
     const totalRows = parseInt(range.split("/")[1], 10) || 0;
 
-    // Build all page requests up front and run them in parallel
-    const pageReqs = [];
-    for(let off = 0; off < totalRows; off += PAGE_SIZE){
-      pageReqs.push(sbFetch("bunnings_facts?select=*&order=wk_start.asc&offset=" + off + "&limit=" + PAGE_SIZE));
+    // Smaller pages keep peak memory down; run only a few at a time so we do
+    // not simply move the concurrency problem somewhere else.
+    const CONCURRENCY = 3;
+    const offsets = [];
+    for(let off = 0; off < totalRows; off += PAGE_SIZE) offsets.push(off);
+
+    const factPages = [];
+    for(let i = 0; i < offsets.length; i += CONCURRENCY){
+      const slice = offsets.slice(i, i + CONCURRENCY).map(off =>
+        sbFetch("bunnings_facts?select=*&order=wk_start.asc&offset=" + off + "&limit=" + PAGE_SIZE));
+      factPages.push(...await Promise.all(slice));
     }
 
-    const [stores, items, ...factPages] = await Promise.all([
+    const [stores, items] = await Promise.all([
       sbFetch("bunnings_stores?select=*"),
-      sbFetch("bunnings_items?select=*"),
-      ...pageReqs
+      sbFetch("bunnings_items?select=*")
     ]);
 
     // Lookup maps so each fact row stays tiny over the wire
