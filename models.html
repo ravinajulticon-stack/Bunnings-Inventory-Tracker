@@ -249,7 +249,14 @@ function isRealStore(name){
 // matched against the description with punctuation stripped. Verified: 28 of 29
 // codes match, no SKU is claimed by two codes, and the set covers 97.3% of AU
 // sales. DDL902-MFVP-11HWS has no Bunnings equivalent at all.
-const SALEOUT = {
+const SALEOUT_NZ = {
+  "Philips Locks": {
+    "7300-5HWS":"7300", "DDL210S-1H":"DDL210-1H", "DDL210S-12H":"DDL210S-12H",
+    "DDL615-5HBS":"DDL615"
+  }
+};
+
+const SALEOUT_AU = {
   "Philips Locks": {
     "DDL709-FVP-7HWS":"DDL709", "7300-5HWS":"7300", "DDL210S-1H":"DDL210-1H",
     "DDL210S-12H":"DDL210S-12H", "DDL505-5HBS":"DDL505", "DDL720-MVP-17HWS":"DDL720-MVP",
@@ -266,14 +273,20 @@ const SALEOUT = {
     "SBX602-6CU":"SBX602-6C"
   }
 };
+
+// NZ has its own, much shorter Saleout list — 4 Philips Locks, no Zigbang or
+// Safes. Applying the AU list to NZ swept in Samsung product NZ does sell but
+// Sam does not track there, so the lists are kept separate per country.
+const SALEOUT_BY_COUNTRY = { AU: SALEOUT_AU, NZ: SALEOUT_NZ };
 // Services and point-of-sale display units are not products Sam tracks.
 const NOT_PRODUCT = /INSTALLATION|DISPLAY BOARD|DISPLAY BOX|CALL OUT/i;
 const nrm = s => (s||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
 
-function classify(desc){
+function classify(desc, ctry){
   if(NOT_PRODUCT.test(desc||"")) return null;
+  const map = SALEOUT_BY_COUNTRY[ctry] || {};
   const d = nrm(desc);
-  for(const [cat, codes] of Object.entries(SALEOUT))
+  for(const [cat, codes] of Object.entries(map))
     for(const [code, token] of Object.entries(codes))
       if(d.includes(nrm(token))) return { code, cat };
   return null;
@@ -350,8 +363,9 @@ async function loadData(){
     // tag each row against the Saleout list (memoised per description)
     const clsCache = new Map();
     for(const r of rows){
-      let c = clsCache.get(r.description);
-      if(c === undefined){ c = classify(r.description); clsCache.set(r.description, c); }
+      const key = r.country + "|" + r.description;
+      let c = clsCache.get(key);
+      if(c === undefined){ c = classify(r.description, r.country); clsCache.set(key, c); }
       if(c){ r.saleCode = c.code; r.saleCat = c.cat; }
     }
 
@@ -393,6 +407,20 @@ function showLatestWeek(){
   if(wks >= 4){ cls = "stale"; note = wks + " weeks behind"; }
   else if(wks >= 2){ cls = "due"; note = wks + " weeks behind"; }
   el.innerHTML = "Latest Week: " + label + ' <span class="stale-badge ' + cls + '">' + note + "</span>";
+}
+
+// Only show categories the active country actually tracks.
+function rebuildCatChips(){
+  const cats = Object.keys(SALEOUT_BY_COUNTRY[country] || {});
+  document.querySelectorAll("#catFilters .chip").forEach(chip => {
+    const c = chip.dataset.cat;
+    chip.style.display = (c === "all" || cats.includes(c)) ? "" : "none";
+  });
+  if(filters.cat !== "all" && !cats.includes(filters.cat)){
+    filters.cat = "all";
+    document.querySelectorAll("#catFilters .chip").forEach(c => c.classList.remove("active"));
+    document.querySelector('#catFilters .chip[data-cat="all"]').classList.add("active");
+  }
 }
 
 function rebuildStateChips(){
@@ -451,6 +479,7 @@ function rebuildWeeks(){
 }
 
 function buildFilters(){
+  rebuildCatChips();
   rebuildStateChips();
   rebuildWeeks();
   rebuildPickers();
@@ -495,6 +524,7 @@ function buildFilters(){
       btn.classList.add("active");
       country = btn.dataset.country;
       filters.state = "all";
+      rebuildCatChips();
       rebuildStateChips();
       rebuildWeeks();
       rebuildPickers();
