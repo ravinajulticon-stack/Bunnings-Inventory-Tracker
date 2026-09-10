@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bunnings — Sales per Model per Store</title>
+<style>
+  :root{
+    --bg:#0b0e14; --panel:#12161f; --panel-border:#232838;
+    --text:#e7eaf0; --muted:#8a92a6; --navy:#1f4e78;
+    --green:#2e9e5b; --amber:#e0b94f; --red:#c0392b;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  header{padding:22px 28px 14px;border-bottom:1px solid var(--panel-border);display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px;}
+  header h1{margin:0;font-size:20px;font-weight:600;letter-spacing:.2px;}
+  header .sub{color:var(--muted);font-size:12.5px;margin-top:4px;}
+  #latestWeek{font-size:13px;font-weight:600;margin-bottom:3px;text-align:right;}
+  #lastUpdated{color:var(--muted);font-size:12px;text-align:right;}
+  .stale-badge{display:inline-block;margin-left:8px;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;}
+  .stale-badge.fresh{background:rgba(46,158,91,.15);color:var(--green);}
+  .stale-badge.due{background:rgba(224,185,79,.15);color:var(--amber);}
+  .stale-badge.stale{background:rgba(192,57,43,.15);color:#e8776a;}
+
+  .country-tabs{display:flex;gap:4px;padding:14px 28px 0;}
+  .country-tabs button{background:var(--panel);border:1px solid var(--panel-border);color:var(--muted);
+    font-family:inherit;font-size:13px;font-weight:600;padding:8px 20px;min-width:140px;text-align:center;
+    border-radius:9px;cursor:pointer;transition:all .12s ease;}
+  .country-tabs button:hover{color:var(--text);border-color:#3a4256;}
+  .country-tabs button.active{background:var(--navy);color:#fff;border-color:var(--navy);}
+
+  .filters{display:flex;flex-wrap:wrap;gap:10px;padding:16px 28px;border-bottom:1px solid var(--panel-border);align-items:center;}
+  .filter-group{display:flex;gap:6px;flex-wrap:wrap;}
+  .filter-label{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-right:4px;align-self:center;}
+  .chip{padding:6px 14px;border-radius:20px;background:var(--panel);border:1px solid var(--panel-border);
+    color:var(--muted);font-size:12.5px;cursor:pointer;user-select:none;transition:all .12s ease;}
+  .chip:hover{border-color:#3a4256;color:var(--text);}
+  .chip.active{background:var(--navy);color:#fff;border-color:var(--navy);}
+  select,input[type=search]{background:var(--panel);color:var(--text);border:1px solid var(--panel-border);
+    border-radius:8px;padding:6px 10px;font-size:12.5px;font-family:inherit;}
+  input[type=search]{min-width:180px;}
+
+  main{padding:22px 28px 40px;}
+  .kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:18px;}
+  .kpi{background:var(--panel);border:1px solid var(--panel-border);border-radius:12px;padding:16px 18px;}
+  .kpi .label{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px;}
+  .kpi .value{font-size:23px;font-weight:700;}
+  .kpi .sub{font-size:11.5px;color:var(--muted);margin-top:4px;}
+
+  .panel{background:var(--panel);border:1px solid var(--panel-border);border-radius:12px;padding:18px 20px;margin-bottom:18px;overflow-x:auto;}
+  .panel h2{font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:0 0 14px;
+    display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;}
+  .toggle{display:flex;gap:6px;}
+  .toggle span{padding:3px 10px;border-radius:14px;border:1px solid var(--panel-border);font-size:11px;
+    cursor:pointer;text-transform:none;letter-spacing:0;}
+  .toggle span.active{background:var(--navy);color:#fff;border-color:var(--navy);}
+  .btn{font-family:inherit;font-size:12px;font-weight:600;padding:6px 14px;border-radius:8px;
+    border:1px solid var(--panel-border);background:#1a2030;color:var(--text);cursor:pointer;}
+  .btn:hover{border-color:#3a4256;}
+
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--panel-border);white-space:nowrap;}
+  th{color:var(--muted);font-weight:600;text-transform:uppercase;font-size:10.5px;letter-spacing:.5px;}
+  td.num,th.num{text-align:right;}
+  tbody tr:hover td{background:#161b26;}
+  .empty{color:var(--muted);font-size:13px;padding:20px 0;text-align:center;}
+  .zero{color:#3a4256;}
+  .desc{color:var(--muted);font-size:12px;}
+
+  /* matrix: sticky store column + sticky header */
+  .matrix-wrap{max-height:70vh;overflow:auto;}
+  .matrix th{position:sticky;top:0;background:#151a25;z-index:2;}
+  .matrix th:first-child,.matrix td:first-child{position:sticky;left:0;background:#12161f;z-index:1;min-width:220px;}
+  .matrix th:first-child{z-index:3;}
+  .matrix td,.matrix th{border-right:1px solid #1c2230;}
+
+  #loadError{display:none;background:rgba(192,57,43,.12);border:1px solid var(--red);color:#f3a79c;
+    padding:12px 16px;border-radius:8px;margin-bottom:18px;font-size:13px;}
+  .hint{color:var(--muted);font-size:11.5px;margin-top:10px;}
+
+  @media (max-width:600px){
+    header{padding:16px 12px 12px;} header h1{font-size:18px;}
+    #latestWeek,#lastUpdated{text-align:left;}
+    .country-tabs{padding:12px 12px 0;} .country-tabs button{min-width:0;flex:1;}
+    .filters{padding:12px;gap:8px;} main{padding:16px 12px 32px;}
+    .panel{padding:14px 12px;} table{font-size:12px;} th,td{padding:6px 8px;}
+    select,input[type=search]{max-width:150px;}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Sales per Model per Store</h1>
+    <div class="sub">Bunnings weekly sell-out, by product model and store &mdash; companion to the Inventory Tracker</div>
+  </div>
+  <div>
+    <div id="latestWeek"></div>
+    <div id="lastUpdated">Loading&hellip;</div>
+  </div>
+</header>
+
+<div class="country-tabs" id="countryToggle">
+  <button class="active" data-country="AU">Australia</button>
+  <button data-country="NZ">New Zealand</button>
+</div>
+
+<div class="filters">
+  <span class="filter-label">State</span>
+  <div class="filter-group" id="stateFilters"></div>
+
+  <span class="filter-label" style="margin-left:14px;">Week From</span>
+  <select id="weekFrom"></select>
+  <span class="filter-label" style="margin-left:6px;">To</span>
+  <select id="weekTo"></select>
+
+  <span class="filter-label" style="margin-left:14px;">Model</span>
+  <input type="search" id="modelSearch" placeholder="e.g. DDL210 or 0516187">
+
+  <span class="filter-label" style="margin-left:8px;">Store</span>
+  <input type="search" id="storeSearch" placeholder="e.g. Craigieburn">
+
+  <span class="chip" id="resetFilters" style="margin-left:14px;">Reset</span>
+</div>
+
+<main>
+  <div id="loadError"></div>
+
+  <div class="kpi-row">
+    <div class="kpi"><div class="label">Total $</div><div class="value" id="kpiTotal">&ndash;</div><div class="sub" id="kpiTotalSub">&nbsp;</div></div>
+    <div class="kpi"><div class="label">Units Sold</div><div class="value" id="kpiUnits">&ndash;</div><div class="sub">&nbsp;</div></div>
+    <div class="kpi"><div class="label">Models Selling</div><div class="value" id="kpiModels">&ndash;</div><div class="sub" id="kpiModelsSub">&nbsp;</div></div>
+    <div class="kpi"><div class="label">Stores Selling</div><div class="value" id="kpiStores">&ndash;</div><div class="sub" id="kpiStoresSub">&nbsp;</div></div>
+    <div class="kpi"><div class="label">Model / Store Pairs</div><div class="value" id="kpiPairs">&ndash;</div><div class="sub">with sales in range</div></div>
+  </div>
+
+  <div class="panel">
+    <h2>
+      By Model
+      <span class="toggle" id="metricToggle">
+        <span class="active" data-metric="sales_value">$</span>
+        <span data-metric="units_sold">Units</span>
+      </span>
+    </h2>
+    <table>
+      <thead><tr>
+        <th>SKU</th><th>Model / Description</th>
+        <th class="num">Total</th><th class="num">Units</th>
+        <th class="num">Stores Selling</th><th class="num">Stores Ranged</th><th class="num">Avg per Selling Store</th>
+      </tr></thead>
+      <tbody id="modelBody"></tbody>
+    </table>
+    <div class="hint">"Ranged" counts stores that carried the model at all; "Selling" counts those that actually sold at least one unit in the selected period.</div>
+  </div>
+
+  <div class="panel">
+    <h2>
+      By Store
+      <span>
+        <button class="btn" id="exportStores">Download CSV</button>
+      </span>
+    </h2>
+    <table>
+      <thead><tr>
+        <th>Store</th><th>State</th>
+        <th class="num">Total</th><th class="num">Units</th>
+        <th class="num">Models Sold</th><th>Top Model</th>
+      </tr></thead>
+      <tbody id="storeBody"></tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h2>
+      Model &times; Store Matrix
+      <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <span class="toggle" id="rowLimitToggle">
+          <span class="active" data-limit="40">Top 40 stores</span>
+          <span data-limit="0">All stores</span>
+        </span>
+        <button class="btn" id="exportMatrix">Download full matrix CSV</button>
+      </span>
+    </h2>
+    <div class="matrix-wrap">
+      <table class="matrix">
+        <thead><tr id="matrixHead"></tr></thead>
+        <tbody id="matrixBody"></tbody>
+      </table>
+    </div>
+    <div class="hint">Stores are ordered by total, models by total. Blank cells mean no sales of that model at that store in the selected period. The CSV download always contains every store and model, regardless of the view limit above.</div>
+  </div>
+</main>
+
+<script>
+const SUPABASE_URL = "https://vggbzpvgukprwpopewot.supabase.co";
+const SUPABASE_KEY = "sb_publishable_hG5I11kQ9k5IBYrHaCTkRg_WrwCXYAG";
+const PAGE_SIZE = 25000;
+const CONCURRENCY = 3;
+
+const CURRENCY = { AU: "A$", NZ: "NZ$" };
+let country = "AU";
+const curSym = () => CURRENCY[country] || "$";
+const fmtMoney = n => curSym() + Math.round(n).toLocaleString();
+const fmtNum = n => Math.round(n).toLocaleString();
+
+// Memoised: called per row, but only ~60 distinct weeks exist. toLocaleDateString
+// is slow enough that skipping this costs many seconds on a full load.
+const _wCache = new Map();
+const fmtWeek = d => {
+  let v = _wCache.get(d);
+  if(v) return v;
+  v = new Date(d + "T00:00:00").toLocaleDateString("en-AU", { day:"2-digit", month:"short", year:"2-digit" });
+  _wCache.set(d, v);
+  return v;
+};
+
+// Distribution / returns sites are not stores a rep visits. Kept consistent with
+// the main Inventory Tracker so the two dashboards agree.
+function isRealStore(name){
+  if(!name) return true;
+  if(/returns centre/i.test(name)) return false;
+  if(/^crc\b/i.test(name)) return false;
+  if(/fulfilment centre/i.test(name) && !/trade/i.test(name)) return false;
+  return true;
+}
+
+let rows = [];
+let metric = "sales_value";
+let rowLimit = 40;
+let filters = { state:"all", weekFrom:null, weekTo:null, model:"", store:"" };
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// The NANO Supabase instance intermittently 500s when several large reads land
+// together. Retry before surfacing an error to whoever opened the page.
+async function sbFetch(path, attempt = 0){
+  const MAX = 4;
+  try{
+    const r = await fetch(SUPABASE_URL + "/rest/v1/" + path, {
+      headers: { apikey: SUPABASE_KEY, Authorization: "Bearer " + SUPABASE_KEY }
+    });
+    if(!r.ok){
+      const retryable = r.status >= 500 || r.status === 429;
+      if(retryable && attempt < MAX){ await sleep(400 * Math.pow(2, attempt)); return sbFetch(path, attempt+1); }
+      throw new Error("Supabase returned " + r.status + (attempt ? " after " + (attempt+1) + " attempts" : ""));
+    }
+    return await r.json();
+  }catch(err){
+    if(err instanceof TypeError && attempt < MAX){ await sleep(400 * Math.pow(2, attempt)); return sbFetch(path, attempt+1); }
+    throw err;
+  }
+}
+
+async function loadData(){
+  const started = performance.now();
+  try{
+    let cnt, tries = 0;
+    while(true){
+      cnt = await fetch(SUPABASE_URL + "/rest/v1/bunnings_facts?select=wk_start&limit=1", {
+        headers: { apikey: SUPABASE_KEY, Authorization: "Bearer " + SUPABASE_KEY, Prefer: "count=exact" }
+      });
+      if(cnt.ok) break;
+      if((cnt.status >= 500 || cnt.status === 429) && tries < 4){ await sleep(400 * Math.pow(2, tries++)); continue; }
+      throw new Error("Supabase returned " + cnt.status);
+    }
+    const totalRows = parseInt((cnt.headers.get("content-range")||"").split("/")[1], 10) || 0;
+
+    const offsets = [];
+    for(let o = 0; o < totalRows; o += PAGE_SIZE) offsets.push(o);
+    const pages = [];
+    for(let i = 0; i < offsets.length; i += CONCURRENCY){
+      const slice = offsets.slice(i, i + CONCURRENCY).map(o =>
+        sbFetch("bunnings_facts?select=*&order=wk_start.asc&offset=" + o + "&limit=" + PAGE_SIZE));
+      pages.push(...await Promise.all(slice));
+    }
+    const [stores, items] = await Promise.all([
+      sbFetch("bunnings_stores?select=*"),
+      sbFetch("bunnings_items?select=*")
+    ]);
+
+    const smap = new Map(stores.map(s => [s.country + "|" + s.store, s]));
+    const imap = new Map(items.map(i => [i.item, i.description]));
+
+    rows = pages.flat().map(f => {
+      const s = smap.get(f.country + "|" + f.store) || {};
+      return {
+        country: f.country, wk_start: f.wk_start, item: f.item,
+        description: imap.get(f.item) || "",
+        store: f.store, store_name: s.store_name || f.store, state: s.state || "",
+        units_sold: Number(f.units_sold) || 0, sales_value: Number(f.sales_value) || 0
+      };
+    }).filter(r => isRealStore(r.store_name));
+
+    if(!rows.length){
+      const el = document.getElementById("loadError");
+      el.style.display = "block";
+      el.textContent = "Connected to Supabase but found no rows. Import a weekly CSV on the main tracker first.";
+    }
+
+    buildFilters();
+    showLatestWeek();
+    const secs = ((performance.now() - started)/1000).toFixed(1);
+    document.getElementById("lastUpdated").textContent =
+      "Loaded " + new Date().toLocaleString("en-AU",{dateStyle:"medium",timeStyle:"short"}) +
+      "  \u00b7  " + rows.length.toLocaleString() + " rows in " + secs + "s";
+    render();
+  }catch(err){
+    const el = document.getElementById("loadError");
+    el.style.display = "block";
+    el.textContent = "Couldn't load data from Supabase: " + err.message;
+    document.getElementById("lastUpdated").textContent = "Load failed";
+  }
+}
+
+let weekCache = {};
+function weeksFor(c){
+  if(!weekCache[c]) weekCache[c] = [...new Set(rows.filter(r => r.country === c).map(r => r.wk_start))].sort();
+  return weekCache[c];
+}
+
+function showLatestWeek(){
+  const el = document.getElementById("latestWeek");
+  const w = weeksFor(country);
+  if(!w.length){ el.textContent = "No data"; return; }
+  const latest = w[w.length-1];
+  const label = new Date(latest + "T00:00:00").toLocaleDateString("en-AU",{day:"2-digit",month:"short",year:"numeric"});
+  const wks = Math.floor((Date.now() - new Date(latest + "T00:00:00").getTime())/86400000/7);
+  let cls = "fresh", note = "Updated";
+  if(wks >= 4){ cls = "stale"; note = wks + " weeks behind"; }
+  else if(wks >= 2){ cls = "due"; note = wks + " weeks behind"; }
+  el.innerHTML = "Latest Week: " + label + ' <span class="stale-badge ' + cls + '">' + note + "</span>";
+}
+
+function rebuildStateChips(){
+  const states = [...new Set(rows.filter(r => r.country === country).map(r => r.state))].filter(Boolean).sort();
+  const wrap = document.getElementById("stateFilters");
+  wrap.innerHTML = '<span class="chip active" data-state="all">All</span>' +
+    states.map(s => '<span class="chip" data-state="' + s + '">' + s + '</span>').join("");
+  wrap.querySelectorAll(".chip").forEach(chip => {
+    chip.addEventListener("click", () => {
+      wrap.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
+      chip.classList.add("active");
+      filters.state = chip.dataset.state;
+      render();
+    });
+  });
+}
+
+function rebuildWeeks(){
+  const w = weeksFor(country);
+  const opts = w.map(x => '<option value="' + x + '">' + fmtWeek(x) + '</option>').join("");
+  const f = document.getElementById("weekFrom"), t = document.getElementById("weekTo");
+  f.innerHTML = opts; t.innerHTML = opts;
+  filters.weekFrom = w[0]; filters.weekTo = w[w.length-1];
+  f.value = filters.weekFrom; t.value = filters.weekTo;
+}
+
+function buildFilters(){
+  rebuildStateChips();
+  rebuildWeeks();
+
+  document.getElementById("weekFrom").addEventListener("change", e => {
+    filters.weekFrom = e.target.value;
+    if(filters.weekFrom > filters.weekTo){ filters.weekTo = filters.weekFrom; document.getElementById("weekTo").value = filters.weekTo; }
+    render();
+  });
+  document.getElementById("weekTo").addEventListener("change", e => {
+    filters.weekTo = e.target.value;
+    if(filters.weekTo < filters.weekFrom){ filters.weekFrom = filters.weekTo; document.getElementById("weekFrom").value = filters.weekFrom; }
+    render();
+  });
+
+  let deb;
+  const onSearch = () => { clearTimeout(deb); deb = setTimeout(render, 220); };
+  document.getElementById("modelSearch").addEventListener("input", e => { filters.model = e.target.value.trim().toLowerCase(); onSearch(); });
+  document.getElementById("storeSearch").addEventListener("input", e => { filters.store = e.target.value.trim().toLowerCase(); onSearch(); });
+
+  document.getElementById("metricToggle").querySelectorAll("span").forEach(el => {
+    el.addEventListener("click", () => {
+      document.querySelectorAll("#metricToggle span").forEach(s => s.classList.remove("active"));
+      el.classList.add("active");
+      metric = el.dataset.metric;
+      render();
+    });
+  });
+  document.getElementById("rowLimitToggle").querySelectorAll("span").forEach(el => {
+    el.addEventListener("click", () => {
+      document.querySelectorAll("#rowLimitToggle span").forEach(s => s.classList.remove("active"));
+      el.classList.add("active");
+      rowLimit = Number(el.dataset.limit);
+      render();
+    });
+  });
+
+  document.getElementById("countryToggle").querySelectorAll("button").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if(btn.dataset.country === country) return;
+      document.querySelectorAll("#countryToggle button").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      country = btn.dataset.country;
+      filters.state = "all";
+      rebuildStateChips();
+      rebuildWeeks();
+      showLatestWeek();
+      render();
+    });
+  });
+
+  document.getElementById("resetFilters").addEventListener("click", () => {
+    filters.state = "all"; filters.model = ""; filters.store = "";
+    document.getElementById("modelSearch").value = "";
+    document.getElementById("storeSearch").value = "";
+    rebuildStateChips();
+    rebuildWeeks();
+    render();
+  });
+
+  document.getElementById("exportStores").addEventListener("click", exportStoreCsv);
+  document.getElementById("exportMatrix").addEventListener("click", exportMatrixCsv);
+}
+
+function applyFilters(){
+  return rows.filter(r =>
+    r.country === country &&
+    (filters.state === "all" || r.state === filters.state) &&
+    (!filters.weekFrom || (r.wk_start >= filters.weekFrom && r.wk_start <= filters.weekTo)) &&
+    (!filters.model || r.item.toLowerCase().includes(filters.model) || (r.description||"").toLowerCase().includes(filters.model)) &&
+    (!filters.store || (r.store_name||"").toLowerCase().includes(filters.store))
+  );
+}
+
+// One pass produces everything the three tables need.
+function aggregate(f){
+  const models = new Map();   // item -> {desc, sales, units, ranged:Set, selling:Set}
+  const stores = new Map();   // store -> {name, state, sales, units, models:Map}
+  const pairs = new Map();    // item|store -> {sales, units}
+
+  for(const r of f){
+    let m = models.get(r.item);
+    if(!m){ m = { desc:r.description, sales:0, units:0, ranged:new Set(), selling:new Set() }; models.set(r.item, m); }
+    m.sales += r.sales_value; m.units += r.units_sold;
+    m.ranged.add(r.store);
+    if(r.units_sold > 0) m.selling.add(r.store);
+
+    let s = stores.get(r.store);
+    if(!s){ s = { name:r.store_name, state:r.state, sales:0, units:0, models:new Map() }; stores.set(r.store, s); }
+    s.sales += r.sales_value; s.units += r.units_sold;
+    if(r.units_sold > 0 || r.sales_value > 0){
+      s.models.set(r.item, (s.models.get(r.item)||0) + r[metric]);
+    }
+
+    const k = r.item + "|" + r.store;
+    let p = pairs.get(k);
+    if(!p){ p = { sales:0, units:0 }; pairs.set(k, p); }
+    p.sales += r.sales_value; p.units += r.units_sold;
+  }
+  return { models, stores, pairs };
+}
+
+function render(){
+  const f = applyFilters();
+  const { models, stores, pairs } = aggregate(f);
+
+  const total = f.reduce((s,r) => s + r.sales_value, 0);
+  const units = f.reduce((s,r) => s + r.units_sold, 0);
+  const sellingModels = [...models.values()].filter(m => m.units > 0).length;
+  const sellingStores = [...stores.values()].filter(s => s.units > 0).length;
+  const livePairs = [...pairs.values()].filter(p => p.units > 0).length;
+
+  document.getElementById("kpiTotal").textContent = fmtMoney(total);
+  document.getElementById("kpiTotalSub").textContent =
+    filters.weekFrom ? fmtWeek(filters.weekFrom) + " to " + fmtWeek(filters.weekTo) : "";
+  document.getElementById("kpiUnits").textContent = fmtNum(units);
+  document.getElementById("kpiModels").textContent = fmtNum(sellingModels);
+  document.getElementById("kpiModelsSub").textContent = "of " + models.size + " ranged";
+  document.getElementById("kpiStores").textContent = fmtNum(sellingStores);
+  document.getElementById("kpiStoresSub").textContent = "of " + stores.size + " with stock";
+  document.getElementById("kpiPairs").textContent = fmtNum(livePairs);
+
+  renderModels(models);
+  renderStores(stores);
+  renderMatrix(models, stores, pairs);
+}
+
+function renderModels(models){
+  const list = [...models.entries()].sort((a,b) => b[1][metric === "units_sold" ? "units" : "sales"] - a[1][metric === "units_sold" ? "units" : "sales"]);
+  const body = document.getElementById("modelBody");
+  if(!list.length){ body.innerHTML = '<tr><td colspan="7" class="empty">No data for this selection</td></tr>'; return; }
+  body.innerHTML = list.map(([sku, m]) => {
+    const avg = m.selling.size ? (metric === "units_sold" ? m.units : m.sales) / m.selling.size : 0;
+    return '<tr><td>' + sku + '</td><td class="desc">' + (m.desc || "").slice(0,60) + '</td>' +
+      '<td class="num">' + (metric === "units_sold" ? fmtNum(m.units) : fmtMoney(m.sales)) + '</td>' +
+      '<td class="num">' + fmtNum(m.units) + '</td>' +
+      '<td class="num">' + fmtNum(m.selling.size) + '</td>' +
+      '<td class="num">' + fmtNum(m.ranged.size) + '</td>' +
+      '<td class="num">' + (metric === "units_sold" ? fmtNum(avg) : fmtMoney(avg)) + '</td></tr>';
+  }).join("");
+}
+
+function renderStores(stores){
+  const key = metric === "units_sold" ? "units" : "sales";
+  const list = [...stores.entries()].sort((a,b) => b[1][key] - a[1][key]).slice(0, 100);
+  const body = document.getElementById("storeBody");
+  if(!list.length){ body.innerHTML = '<tr><td colspan="6" class="empty">No data for this selection</td></tr>'; return; }
+  body.innerHTML = list.map(([id, s]) => {
+    let top = "", topVal = -1;
+    for(const [item, v] of s.models){ if(v > topVal){ topVal = v; top = item; } }
+    return '<tr><td>' + s.name + '</td><td>' + s.state + '</td>' +
+      '<td class="num">' + (metric === "units_sold" ? fmtNum(s.units) : fmtMoney(s.sales)) + '</td>' +
+      '<td class="num">' + fmtNum(s.units) + '</td>' +
+      '<td class="num">' + fmtNum([...s.models.values()].filter(v => v > 0).length) + '</td>' +
+      '<td class="desc">' + (top || "\u2014") + '</td></tr>';
+  }).join("");
+}
+
+function renderMatrix(models, stores, pairs){
+  const mkey = metric === "units_sold" ? "units" : "sales";
+  const modelList = [...models.entries()].sort((a,b) => b[1][mkey] - a[1][mkey]).map(e => e[0]);
+  let storeList = [...stores.entries()].sort((a,b) => b[1][mkey] - a[1][mkey]);
+  if(rowLimit) storeList = storeList.slice(0, rowLimit);
+
+  const head = document.getElementById("matrixHead");
+  head.innerHTML = '<th>Store</th>' + modelList.map(m => '<th class="num">' + m + '</th>').join("") + '<th class="num">Total</th>';
+
+  const body = document.getElementById("matrixBody");
+  if(!storeList.length || !modelList.length){
+    body.innerHTML = '<tr><td class="empty">No data for this selection</td></tr>';
+    return;
+  }
+  body.innerHTML = storeList.map(([id, s]) => {
+    const cells = modelList.map(m => {
+      const p = pairs.get(m + "|" + id);
+      const v = p ? p[mkey] : 0;
+      if(!v) return '<td class="num zero">&middot;</td>';
+      return '<td class="num">' + (metric === "units_sold" ? fmtNum(v) : fmtMoney(v)) + '</td>';
+    }).join("");
+    return '<tr><td>' + s.name + '</td>' + cells +
+      '<td class="num"><strong>' + (metric === "units_sold" ? fmtNum(s.units) : fmtMoney(s.sales)) + '</strong></td></tr>';
+  }).join("");
+}
+
+/* ---------- CSV export ---------- */
+function download(name, text){
+  const blob = new Blob([text], { type:"text/csv;charset=utf-8;" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+const csvCell = v => {
+  const s = String(v == null ? "" : v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+};
+const rangeTag = () => (filters.weekFrom || "") + "_to_" + (filters.weekTo || "");
+
+function exportStoreCsv(){
+  const f = applyFilters();
+  const { stores } = aggregate(f);
+  const lines = [["Store Number","Store Name","State","Sales","Units","Models Sold"].join(",")];
+  for(const [id, s] of [...stores.entries()].sort((a,b) => b[1].sales - a[1].sales)){
+    lines.push([id, s.name, s.state, s.sales.toFixed(2), s.units,
+      [...s.models.values()].filter(v => v > 0).length].map(csvCell).join(","));
+  }
+  download("bunnings_" + country + "_by_store_" + rangeTag() + ".csv", lines.join("\n"));
+}
+
+function exportMatrixCsv(){
+  const f = applyFilters();
+  const { models, stores, pairs } = aggregate(f);
+  const mkey = metric === "units_sold" ? "units" : "sales";
+  const modelList = [...models.entries()].sort((a,b) => b[1][mkey] - a[1][mkey]).map(e => e[0]);
+  const head = ["Store Number","Store Name","State"]
+    .concat(modelList.map(m => m + " - " + (models.get(m).desc || "").slice(0,40)))
+    .concat(["Total"]);
+  const lines = [head.map(csvCell).join(",")];
+  for(const [id, s] of [...stores.entries()].sort((a,b) => b[1][mkey] - a[1][mkey])){
+    const row = [id, s.name, s.state];
+    let tot = 0;
+    for(const m of modelList){
+      const p = pairs.get(m + "|" + id);
+      const v = p ? p[mkey] : 0;
+      tot += v;
+      row.push(metric === "units_sold" ? v : v.toFixed(2));
+    }
+    row.push(metric === "units_sold" ? tot : tot.toFixed(2));
+    lines.push(row.map(csvCell).join(","));
+  }
+  download("bunnings_" + country + "_model_x_store_" + (metric === "units_sold" ? "units_" : "sales_") + rangeTag() + ".csv", lines.join("\n"));
+}
+
+loadData();
+</script>
+
+</body>
+</html>
