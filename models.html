@@ -38,7 +38,7 @@
   .chip.active{background:var(--navy);color:#fff;border-color:var(--navy);}
   select,input[type=search]{background:var(--panel);color:var(--text);border:1px solid var(--panel-border);
     border-radius:8px;padding:6px 10px;font-size:12.5px;font-family:inherit;}
-  input[type=search]{min-width:180px;}
+  input[type=search]{min-width:250px;}
 
   main{padding:22px 28px 40px;}
   .kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:18px;}
@@ -116,10 +116,14 @@
   <select id="weekTo"></select>
 
   <span class="filter-label" style="margin-left:14px;">Model</span>
-  <input type="search" id="modelSearch" placeholder="e.g. DDL210 or 0516187">
+  <input type="search" id="modelSearch" list="modelList" autocomplete="off"
+         placeholder="All models — click or type to filter">
+  <datalist id="modelList"></datalist>
 
   <span class="filter-label" style="margin-left:8px;">Store</span>
-  <input type="search" id="storeSearch" placeholder="e.g. Craigieburn">
+  <input type="search" id="storeSearch" list="storeList" autocomplete="off"
+         placeholder="All stores — click or type to filter">
+  <datalist id="storeList"></datalist>
 
   <span class="chip" id="resetFilters" style="margin-left:14px;">Reset</span>
 </div>
@@ -347,6 +351,37 @@ function rebuildStateChips(){
   });
 }
 
+// Populate the model / store pickers for the active country. These are
+// datalists on a text input rather than <select> so the existing substring
+// behaviour survives: typing a fragment like "SAFE" still matches many records,
+// which a single-select dropdown would have taken away. Picking an option just
+// fills the input with that exact value.
+function rebuildPickers(){
+  const scoped = rows.filter(r => r.country === country);
+
+  const models = new Map();   // item -> {desc, sales}
+  const stores = new Map();   // store name -> {state, sales}
+  for(const r of scoped){
+    let m = models.get(r.item);
+    if(!m){ m = { desc: r.description || "", sales: 0 }; models.set(r.item, m); }
+    m.sales += r.sales_value;
+    let s = stores.get(r.store_name);
+    if(!s){ s = { state: r.state || "", sales: 0 }; stores.set(r.store_name, s); }
+    s.sales += r.sales_value;
+  }
+
+  // biggest sellers first, so the ones people ask about are at the top
+  document.getElementById("modelList").innerHTML =
+    [...models.entries()].sort((a,b) => b[1].sales - a[1].sales)
+      .map(([sku, m]) => '<option value="' + sku + '">' + sku +
+           (m.desc ? "  \u2014  " + m.desc.slice(0,60) : "") + "</option>").join("");
+
+  document.getElementById("storeList").innerHTML =
+    [...stores.entries()].sort((a,b) => b[1].sales - a[1].sales)
+      .map(([name, s]) => '<option value="' + name + '">' + name +
+           (s.state ? "  \u2014  " + s.state : "") + "</option>").join("");
+}
+
 function rebuildWeeks(){
   const w = weeksFor(country);
   const opts = w.map(x => '<option value="' + x + '">' + fmtWeek(x) + '</option>').join("");
@@ -359,6 +394,7 @@ function rebuildWeeks(){
 function buildFilters(){
   rebuildStateChips();
   rebuildWeeks();
+  rebuildPickers();
 
   document.getElementById("weekFrom").addEventListener("change", e => {
     filters.weekFrom = e.target.value;
@@ -402,6 +438,7 @@ function buildFilters(){
       filters.state = "all";
       rebuildStateChips();
       rebuildWeeks();
+      rebuildPickers();
       showLatestWeek();
       render();
     });
