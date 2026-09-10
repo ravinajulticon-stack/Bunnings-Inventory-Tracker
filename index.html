@@ -3,336 +3,88 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Bunnings Inventory Tracker</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<title>Bunnings — Sales per Model per Store</title>
 <style>
   :root{
-    --bg:#0b0e14;
-    --panel:#12161f;
-    --panel-border:#232838;
-    --text:#e7eaf0;
-    --muted:#8a92a6;
-    --navy:#1f4e78;
-    --green:#2e9e5b;
-    --amber:#e0b94f;
-    --red:#c0392b;
-    --trade:#4f8ef7;
-    --retail:#f2994a;
+    --bg:#0b0e14; --panel:#12161f; --panel-border:#232838;
+    --text:#e7eaf0; --muted:#8a92a6; --navy:#1f4e78;
+    --green:#2e9e5b; --amber:#e0b94f; --red:#c0392b;
   }
   *{box-sizing:border-box;}
-  body{
-    margin:0;
-    background:var(--bg);
-    color:var(--text);
-    font-family:"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-  }
-  header{
-    padding:22px 28px 14px;
-    border-bottom:1px solid var(--panel-border);
-    display:flex;
-    justify-content:space-between;
-    align-items:flex-end;
-    flex-wrap:wrap;
-    gap:12px;
-  }
-  header h1{
-    margin:0;
-    font-size:20px;
-    font-weight:600;
-    letter-spacing:0.2px;
-  }
-  header .sub{
-    color:var(--muted);
-    font-size:12.5px;
-    margin-top:4px;
-  }
-  #lastUpdated{
-    color:var(--muted);
-    font-size:12px;
-    text-align:right;
-  }
-  #latestWeek{
-    font-size:13px;
-    font-weight:600;
-    color:var(--text);
-    margin-bottom:3px;
-    text-align:right;
-  }
-  .stale-badge{
-    display:inline-block;
-    margin-left:8px;
-    padding:2px 8px;
-    border-radius:10px;
-    font-size:11px;
-    font-weight:600;
-  }
-  .stale-badge.fresh{ background:rgba(46,158,91,0.15);  color:var(--green); }
-  .stale-badge.due{   background:rgba(224,185,79,0.15); color:var(--amber); }
-  .stale-badge.stale{ background:rgba(192,57,43,0.15);  color:#e8776a; }
+  body{margin:0;background:var(--bg);color:var(--text);font-family:"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  header{padding:22px 28px 14px;border-bottom:1px solid var(--panel-border);display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px;}
+  header h1{margin:0;font-size:20px;font-weight:600;letter-spacing:.2px;}
+  header .sub{color:var(--muted);font-size:12.5px;margin-top:4px;}
+  #latestWeek{font-size:13px;font-weight:600;margin-bottom:3px;text-align:right;}
+  #lastUpdated{color:var(--muted);font-size:12px;text-align:right;}
+  .stale-badge{display:inline-block;margin-left:8px;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;}
+  .stale-badge.fresh{background:rgba(46,158,91,.15);color:var(--green);}
+  .stale-badge.due{background:rgba(224,185,79,.15);color:var(--amber);}
+  .stale-badge.stale{background:rgba(192,57,43,.15);color:#e8776a;}
 
-  .country-tabs{
-    display:flex;
-    gap:4px;
-    padding:14px 28px 0;
-    background:var(--bg);
-  }
-  .country-tabs button{
-    background:var(--panel);
-    border:1px solid var(--panel-border);
-    color:var(--muted);
-    font-family:inherit;
-    font-size:13px;
-    font-weight:600;
-    padding:8px 20px;
-    /* equal width regardless of label length */
-    min-width:140px;
-    text-align:center;
-    border-radius:9px;
-    cursor:pointer;
-    transition:all .12s ease;
-  }
-  .country-tabs button:hover{ color:var(--text); border-color:#3a4256; }
-  .country-tabs button.active{
-    background:var(--navy);
-    color:#fff;
-    border-color:var(--navy);
-  }
+  .country-tabs{display:flex;gap:4px;padding:14px 28px 0;}
+  .country-tabs button{background:var(--panel);border:1px solid var(--panel-border);color:var(--muted);
+    font-family:inherit;font-size:13px;font-weight:600;padding:8px 20px;min-width:140px;text-align:center;
+    border-radius:9px;cursor:pointer;transition:all .12s ease;}
+  .country-tabs button:hover{color:var(--text);border-color:#3a4256;}
+  .country-tabs button.active{background:var(--navy);color:#fff;border-color:var(--navy);}
 
-  .filters{
-    display:flex;
-    flex-wrap:wrap;
-    gap:10px;
-    padding:16px 28px;
-    border-bottom:1px solid var(--panel-border);
-    align-items:center;
-  }
-  .filter-group{
-    display:flex;
-    gap:6px;
-    flex-wrap:wrap;
-  }
-  .chip{
-    padding:6px 14px;
-    border-radius:20px;
-    background:var(--panel);
-    border:1px solid var(--panel-border);
-    color:var(--muted);
-    font-size:12.5px;
-    cursor:pointer;
-    user-select:none;
-    transition:all .12s ease;
-  }
-  .chip:hover{ border-color:#3a4256; color:var(--text); }
-  .chip.active{
-    background:var(--navy);
-    color:#fff;
-    border-color:var(--navy);
-  }
-  .filter-label{
-    font-size:11px;
-    text-transform:uppercase;
-    letter-spacing:0.6px;
-    color:var(--muted);
-    margin-right:4px;
-    align-self:center;
-  }
-  select{
-    background:var(--panel);
-    color:var(--text);
-    border:1px solid var(--panel-border);
-    border-radius:8px;
-    padding:6px 10px;
-    font-size:12.5px;
-  }
+  .filters{display:flex;flex-wrap:wrap;gap:10px;padding:16px 28px;border-bottom:1px solid var(--panel-border);align-items:center;}
+  .filter-group{display:flex;gap:6px;flex-wrap:wrap;}
+  .filter-label{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-right:4px;align-self:center;}
+  .chip{padding:6px 14px;border-radius:20px;background:var(--panel);border:1px solid var(--panel-border);
+    color:var(--muted);font-size:12.5px;cursor:pointer;user-select:none;transition:all .12s ease;}
+  .chip:hover{border-color:#3a4256;color:var(--text);}
+  .chip.active{background:var(--navy);color:#fff;border-color:var(--navy);}
+  select,input[type=search]{background:var(--panel);color:var(--text);border:1px solid var(--panel-border);
+    border-radius:8px;padding:6px 10px;font-size:12.5px;font-family:inherit;}
+  input[type=search]{min-width:180px;}
 
-  main{ padding:22px 28px 40px; }
+  main{padding:22px 28px 40px;}
+  .kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:18px;}
+  .kpi{background:var(--panel);border:1px solid var(--panel-border);border-radius:12px;padding:16px 18px;}
+  .kpi .label{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px;}
+  .kpi .value{font-size:23px;font-weight:700;}
+  .kpi .sub{font-size:11.5px;color:var(--muted);margin-top:4px;}
 
-  .kpi-row{
-    display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
-    gap:14px;
-    margin-bottom:22px;
-  }
-  .kpi{
-    background:var(--panel);
-    border:1px solid var(--panel-border);
-    border-radius:12px;
-    padding:16px 18px;
-  }
-  .kpi .label{
-    font-size:11px;
-    text-transform:uppercase;
-    letter-spacing:0.6px;
-    color:var(--muted);
-    margin-bottom:8px;
-  }
-  .kpi .value{
-    font-size:24px;
-    font-weight:700;
-  }
-  .kpi .sub{
-    font-size:11.5px;
-    color:var(--muted);
-    margin-top:4px;
-  }
-  .kpi.trade .value{ color:var(--trade); }
-  .kpi.retail .value{ color:var(--retail); }
+  .panel{background:var(--panel);border:1px solid var(--panel-border);border-radius:12px;padding:18px 20px;margin-bottom:18px;overflow-x:auto;}
+  .panel h2{font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:0 0 14px;
+    display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;}
+  .toggle{display:flex;gap:6px;}
+  .toggle span{padding:3px 10px;border-radius:14px;border:1px solid var(--panel-border);font-size:11px;
+    cursor:pointer;text-transform:none;letter-spacing:0;}
+  .toggle span.active{background:var(--navy);color:#fff;border-color:var(--navy);}
+  .btn{font-family:inherit;font-size:12px;font-weight:600;padding:6px 14px;border-radius:8px;
+    border:1px solid var(--panel-border);background:#1a2030;color:var(--text);cursor:pointer;}
+  .btn:hover{border-color:#3a4256;}
 
-  .panel{
-    overflow-x:auto;
-    background:var(--panel);
-    border:1px solid var(--panel-border);
-    border-radius:12px;
-    padding:18px 20px;
-    margin-bottom:18px;
-  }
-  .panel h2{
-    font-size:13px;
-    text-transform:uppercase;
-    letter-spacing:0.6px;
-    color:var(--muted);
-    margin:0 0 14px;
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-  }
-  .panel h2 .toggle-row{
-    display:flex;
-    gap:10px;
-  }
-  .panel h2 .toggle{
-    display:flex;
-    gap:6px;
-  }
-  .panel h2 .toggle span{
-    padding:3px 10px;
-    border-radius:14px;
-    border:1px solid var(--panel-border);
-    font-size:11px;
-    cursor:pointer;
-    text-transform:none;
-    letter-spacing:0;
-  }
-  .panel h2 .toggle span.active{
-    background:var(--navy);
-    color:#fff;
-    border-color:var(--navy);
-  }
-  canvas{ max-height:320px; }
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--panel-border);white-space:nowrap;}
+  th{color:var(--muted);font-weight:600;text-transform:uppercase;font-size:10.5px;letter-spacing:.5px;}
+  td.num,th.num{text-align:right;}
+  tbody tr:hover td{background:#161b26;}
+  .empty{color:var(--muted);font-size:13px;padding:20px 0;text-align:center;}
+  .zero{color:#3a4256;}
+  .desc{color:var(--muted);font-size:12px;}
 
-  .grid-2{
-    display:grid;
-    grid-template-columns:1fr 1fr;
-    gap:18px;
-  }
-  @media (max-width:920px){
-    .grid-2{ grid-template-columns:1fr; }
-  }
-  /* phones: the page was overflowing to ~473px on a 390px screen */
+  /* matrix: sticky store column + sticky header */
+  .matrix-wrap{max-height:70vh;overflow:auto;}
+  .matrix th{position:sticky;top:0;background:#151a25;z-index:2;}
+  .matrix th:first-child,.matrix td:first-child{position:sticky;left:0;background:#12161f;z-index:1;min-width:220px;}
+  .matrix th:first-child{z-index:3;}
+  .matrix td,.matrix th{border-right:1px solid #1c2230;}
+
+  #loadError{display:none;background:rgba(192,57,43,.12);border:1px solid var(--red);color:#f3a79c;
+    padding:12px 16px;border-radius:8px;margin-bottom:18px;font-size:13px;}
+  .hint{color:var(--muted);font-size:11.5px;margin-top:10px;}
+
   @media (max-width:600px){
-    header{ padding:16px 12px 12px; }
-    header h1{ font-size:18px; }
-    #latestWeek, #lastUpdated{ text-align:left; }
-    .country-tabs{ padding:12px 12px 0; }
-    .country-tabs button{ min-width:0; flex:1; }
-    .filters{ padding:12px; gap:8px; }
-    main{ padding:16px 12px 32px; }
-    .panel{ padding:14px 12px; }
-    .kpi-row{ gap:10px; }
-    table{ font-size:12px; }
-    th, td{ padding:6px 8px; }
-    canvas{ max-height:240px; }
-    select{ max-width:150px; }
-  }
-
-  table{
-    width:100%;
-    border-collapse:collapse;
-    font-size:13px;
-  }
-  th, td{
-    text-align:left;
-    padding:8px 10px;
-    border-bottom:1px solid var(--panel-border);
-  }
-  th{
-    color:var(--muted);
-    font-weight:600;
-    text-transform:uppercase;
-    font-size:10.5px;
-    letter-spacing:0.5px;
-  }
-  td.num, th.num{ text-align:right; }
-  tr:hover td{ background:#161b26; }
-
-  .badge{
-    display:inline-block;
-    padding:2px 9px;
-    border-radius:10px;
-    font-size:11px;
-    font-weight:600;
-  }
-  .badge.trade{ background:rgba(79,142,247,0.15); color:var(--trade); }
-  .badge.retail{ background:rgba(242,153,74,0.15); color:var(--retail); }
-
-  .upload-card{
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:16px;
-    flex-wrap:wrap;
-    background:var(--panel);
-    border:1px dashed var(--panel-border);
-    border-radius:12px;
-    padding:14px 18px;
-    margin-bottom:18px;
-  }
-  .upload-card h3{
-    margin:0 0 3px;
-    font-size:13.5px;
-    font-weight:600;
-  }
-  .upload-card p{
-    margin:0;
-    font-size:12px;
-    color:var(--muted);
-    max-width:640px;
-  }
-  .upload-actions{ display:flex; gap:8px; align-items:center; }
-  .btn{
-    font-family:inherit;
-    font-size:12.5px;
-    font-weight:600;
-    padding:8px 16px;
-    border-radius:8px;
-    border:1px solid var(--panel-border);
-    background:#1a2030;
-    color:var(--text);
-    cursor:pointer;
-  }
-  .btn:hover:not(:disabled){ border-color:#3a4256; }
-  .btn.primary{ background:var(--navy); border-color:var(--navy); color:#fff; }
-  .btn:disabled{ opacity:.45; cursor:not-allowed; }
-  #uploadStatus{ font-size:12px; margin-top:6px; }
-  #uploadStatus.err{ color:#e8776a; }
-  #uploadStatus.ok{ color:var(--green); }
-  #uploadStatus.busy{ color:var(--amber); }
-
-  .empty{
-    color:var(--muted);
-    font-size:13px;
-    padding:20px 0;
-    text-align:center;
-  }
-  #loadError{
-    display:none;
-    background:rgba(192,57,43,0.12);
-    border:1px solid var(--red);
-    color:#f3a79c;
-    padding:12px 16px;
-    border-radius:8px;
-    margin-bottom:18px;
-    font-size:13px;
+    header{padding:16px 12px 12px;} header h1{font-size:18px;}
+    #latestWeek,#lastUpdated{text-align:left;}
+    .country-tabs{padding:12px 12px 0;} .country-tabs button{min-width:0;flex:1;}
+    .filters{padding:12px;gap:8px;} main{padding:16px 12px 32px;}
+    .panel{padding:14px 12px;} table{font-size:12px;} th,td{padding:6px 8px;}
+    select,input[type=search]{max-width:150px;}
   }
 </style>
 </head>
@@ -340,12 +92,12 @@
 
 <header>
   <div>
-    <h1>Bunnings Inventory Tracker</h1>
-    <div class="sub">Weekly SKU-level inventory &amp; sales, by store and state — rep-performance baseline</div>
+    <h1>Sales per Model per Store</h1>
+    <div class="sub">Bunnings weekly sell-out, by product model and store &mdash; companion to the Inventory Tracker</div>
   </div>
   <div>
     <div id="latestWeek"></div>
-    <div id="lastUpdated">Loading…</div>
+    <div id="lastUpdated">Loading&hellip;</div>
   </div>
 </header>
 
@@ -358,30 +110,16 @@
   <span class="filter-label">State</span>
   <div class="filter-group" id="stateFilters"></div>
 
-  <span class="filter-label" style="margin-left:14px;">Site type</span>
-  <div class="filter-group" id="typeFilters">
-    <span class="chip active" data-type="all">All</span>
-    <span class="chip" data-type="Bunnings Trade">Trade Centre</span>
-    <span class="chip" data-type="Bunnings Retail">Retail Store</span>
-  </div>
-
-  <span class="filter-label" style="margin-left:14px;">Store</span>
-  <select id="storeFilter"><option value="all">All Stores</option></select>
-
-  <span class="filter-label" style="margin-left:14px;">Quarter</span>
-  <select id="quarterFilter"><option value="all">All Quarters</option></select>
-
-  <span class="filter-label" style="margin-left:14px;">Month From</span>
-  <select id="monthFromFilter"></select>
-
-  <span class="filter-label" style="margin-left:6px;">To</span>
-  <select id="monthToFilter"></select>
-
   <span class="filter-label" style="margin-left:14px;">Week From</span>
-  <select id="weekFromFilter"></select>
-
+  <select id="weekFrom"></select>
   <span class="filter-label" style="margin-left:6px;">To</span>
-  <select id="weekToFilter"></select>
+  <select id="weekTo"></select>
+
+  <span class="filter-label" style="margin-left:14px;">Model</span>
+  <input type="search" id="modelSearch" placeholder="e.g. DDL210 or 0516187">
+
+  <span class="filter-label" style="margin-left:8px;">Store</span>
+  <input type="search" id="storeSearch" placeholder="e.g. Craigieburn">
 
   <span class="chip" id="resetFilters" style="margin-left:14px;">Reset</span>
 </div>
@@ -389,206 +127,113 @@
 <main>
   <div id="loadError"></div>
 
-  <div class="upload-card">
-    <div>
-      <h3>Add this week&rsquo;s Bunnings CSV</h3>
-      <p>Parses in your browser, then saves to Supabase &mdash; everyone who opens this page
-      will see the update. Australia or New Zealand is detected automatically from the file.
-      Adding the same week twice overwrites that week rather than duplicating it.</p>
-      <div id="uploadStatus"></div>
-    </div>
-    <div class="upload-actions">
-      <input type="file" id="csvInput" accept=".csv,text/csv" style="display:none">
-      <button class="btn" id="chooseCsv">Choose CSV</button>
-      <button class="btn primary" id="doUpload" disabled>Add to Dashboard</button>
-    </div>
-  </div>
-
   <div class="kpi-row">
-    <div class="kpi">
-      <div class="label">Total $</div>
-      <div class="value" id="kpiTotal">–</div>
-      <div class="sub" id="kpiTotalSub">&nbsp;</div>
-    </div>
-    <div class="kpi trade">
-      <div class="label">Trade Centre Sites</div>
-      <div class="value" id="kpiTrade">–</div>
-      <div class="sub" id="kpiTradeSub">&nbsp;</div>
-    </div>
-    <div class="kpi retail">
-      <div class="label">Retail Stores</div>
-      <div class="value" id="kpiRetail">–</div>
-      <div class="sub" id="kpiRetailSub">&nbsp;</div>
-    </div>
-    <div class="kpi">
-      <div class="label">Active Stores</div>
-      <div class="value" id="kpiStores">–</div>
-      <div class="sub" id="kpiStoresSub">&nbsp;</div>
-    </div>
-    <div class="kpi">
-      <div class="label">Units Sold</div>
-      <div class="value" id="kpiUnits">–</div>
-      <div class="sub" id="kpiUnitsSub">&nbsp;</div>
-    </div>
+    <div class="kpi"><div class="label">Total $</div><div class="value" id="kpiTotal">&ndash;</div><div class="sub" id="kpiTotalSub">&nbsp;</div></div>
+    <div class="kpi"><div class="label">Units Sold</div><div class="value" id="kpiUnits">&ndash;</div><div class="sub">&nbsp;</div></div>
+    <div class="kpi"><div class="label">Models Selling</div><div class="value" id="kpiModels">&ndash;</div><div class="sub" id="kpiModelsSub">&nbsp;</div></div>
+    <div class="kpi"><div class="label">Stores Selling</div><div class="value" id="kpiStores">&ndash;</div><div class="sub" id="kpiStoresSub">&nbsp;</div></div>
+    <div class="kpi"><div class="label">Model / Store Pairs</div><div class="value" id="kpiPairs">&ndash;</div><div class="sub">with sales in range</div></div>
   </div>
 
   <div class="panel">
     <h2>
-      Trend Per State
-      <span class="toggle-row">
-        <span class="toggle" id="stateGranularityToggle">
-          <span class="active" data-gran="week">Weekly</span>
-          <span data-gran="month">Monthly</span>
-        </span>
-        <span class="toggle" id="stateMetricToggle">
-          <span class="active" data-metric="sales_value">$</span>
-          <span data-metric="units_sold">Units</span>
-        </span>
+      By Model
+      <span class="toggle" id="metricToggle">
+        <span class="active" data-metric="sales_value">$</span>
+        <span data-metric="units_sold">Units</span>
       </span>
-    </h2>
-    <canvas id="stateTrendChart"></canvas>
-  </div>
-
-  <div class="panel">
-    <h2>
-      Trend Per Store — Top 10 by $
-      <span class="toggle-row">
-        <span class="toggle" id="storeGranularityToggle">
-          <span class="active" data-gran="week">Weekly</span>
-          <span data-gran="month">Monthly</span>
-        </span>
-        <span class="toggle" id="storeMetricToggle">
-          <span class="active" data-metric="sales_value">$</span>
-          <span data-metric="units_sold">Units</span>
-        </span>
-      </span>
-    </h2>
-    <canvas id="storeTrendChart"></canvas>
-  </div>
-
-  <div class="grid-2">
-    <div class="panel">
-      <h2>
-        <span id="storeRankTitle">Top Stores</span> — This Selection
-        <span class="toggle" id="storeRankToggle">
-          <span class="active" data-rank="top">Top</span>
-          <span data-rank="bottom">Bottom</span>
-        </span>
-      </h2>
-      <table>
-        <thead>
-          <tr><th>Store</th><th>State</th><th>Site</th><th class="num">$ Total</th></tr>
-        </thead>
-        <tbody id="topStoresBody"></tbody>
-      </table>
-    </div>
-    <div class="panel">
-      <h2>Top SKUs — This Selection</h2>
-      <table>
-        <thead>
-          <tr><th>SKU</th><th>Description</th><th class="num">Units</th><th class="num">$ Total</th></tr>
-        </thead>
-        <tbody id="topSkusBody"></tbody>
-      </table>
-    </div>
-  </div>
-
-  <div class="panel">
-    <h2>
-      No Movement — 0 units sold in this selection
-      <span id="noMoveCount" style="text-transform:none;letter-spacing:0;"></span>
     </h2>
     <table>
-      <thead>
-        <tr><th>Store</th><th>State</th><th>Site</th><th class="num">Stock on Hand</th><th class="num">SOH Value</th></tr>
-      </thead>
-      <tbody id="noMoveBody"></tbody>
+      <thead><tr>
+        <th>SKU</th><th>Model / Description</th>
+        <th class="num">Total</th><th class="num">Units</th>
+        <th class="num">Stores Selling</th><th class="num">Stores Ranged</th><th class="num">Avg per Selling Store</th>
+      </tr></thead>
+      <tbody id="modelBody"></tbody>
     </table>
+    <div class="hint">"Ranged" counts stores that carried the model at all; "Selling" counts those that actually sold at least one unit in the selected period.</div>
+  </div>
+
+  <div class="panel">
+    <h2>
+      By Store
+      <span>
+        <button class="btn" id="exportStores">Download CSV</button>
+      </span>
+    </h2>
+    <table>
+      <thead><tr>
+        <th>Store</th><th>State</th>
+        <th class="num">Total</th><th class="num">Units</th>
+        <th class="num">Models Sold</th><th>Top Model</th>
+      </tr></thead>
+      <tbody id="storeBody"></tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h2>
+      Model &times; Store Matrix
+      <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <span class="toggle" id="rowLimitToggle">
+          <span class="active" data-limit="40">Top 40 stores</span>
+          <span data-limit="0">All stores</span>
+        </span>
+        <button class="btn" id="exportMatrix">Download full matrix CSV</button>
+      </span>
+    </h2>
+    <div class="matrix-wrap">
+      <table class="matrix">
+        <thead><tr id="matrixHead"></tr></thead>
+        <tbody id="matrixBody"></tbody>
+      </table>
+    </div>
+    <div class="hint">Stores are ordered by total, models by total. Blank cells mean no sales of that model at that store in the selected period. The CSV download always contains every store and model, regardless of the view limit above.</div>
   </div>
 </main>
 
 <script>
 const SUPABASE_URL = "https://vggbzpvgukprwpopewot.supabase.co";
 const SUPABASE_KEY = "sb_publishable_hG5I11kQ9k5IBYrHaCTkRg_WrwCXYAG";
-
-const STATE_COLORS = {
-  NSW:"#4f8ef7", VIC:"#e0b94f", QLD:"#2e9e5b", WA:"#c0392b",
-  SA:"#9b59b6", TAS:"#1abc9c", ACT:"#e67e22", NT:"#95a5a6", NQ:"#3498db"
-};
-const stateColor = (s, i) => STATE_COLORS[s] || `hsl(${(i*57)%360} 70% 60%)`;
-
-let rows = [];
-let filters = { state: "all", type: "all", store: "all", weekFrom: null, weekTo: null, quarter: "all", monthFrom: null, monthTo: null };
-
-// Memoised by week: called once per ROW during rehydrate (130k+) but there are
-// only ~60 distinct weeks. toLocaleDateString is slow enough that skipping the
-// cache cost ~12s of page load on its own.
-const _qCache = new Map();
-const _mCache = new Map();
-
-function quarterInfo(wk){
-  let v = _qCache.get(wk);
-  if(v) return v;
-  const d = new Date(wk + "T00:00:00");
-  const q = Math.floor(d.getMonth() / 3) + 1;
-  v = { key: d.getFullYear() * 10 + q, label: "Q" + q + " " + d.getFullYear() };
-  _qCache.set(wk, v);
-  return v;
-}
-function monthInfo(wk){
-  let v = _mCache.get(wk);
-  if(v) return v;
-  const d = new Date(wk + "T00:00:00");
-  v = { key: d.getFullYear() * 100 + d.getMonth(),
-        label: d.toLocaleDateString("en-AU", { month: "short", year: "numeric" }) };
-  _mCache.set(wk, v);
-  return v;
-}
-let stateMetric = "sales_value";
-let storeMetric = "sales_value";
-let storeRank = "top";
-let stateGranularity = "week";
-let storeGranularity = "week";
-let stateChart, storeChart;
-
-function bucketKey(r, gran){
-  return gran === "month" ? r.mkey : r.wk_start;
-}
-function bucketLabel(r, gran){
-  return gran === "month" ? monthInfo(r.wk_start).label : fmtWeek(r.wk_start);
-}
-function getBuckets(f, gran){
-  const map = new Map();
-  f.forEach(r => {
-    const k = bucketKey(r, gran);
-    if(!map.has(k)) map.set(k, bucketLabel(r, gran));
-  });
-  const keys = [...map.keys()].sort((a,b) => gran === "month" ? a-b : (a < b ? -1 : 1));
-  // index lets the chart builders do one pass instead of a nested filter
-  const index = new Map(keys.map((k,i) => [k, i]));
-  return { keys, index, labels: keys.map(k => map.get(k)) };
-}
+const PAGE_SIZE = 25000;
+const CONCURRENCY = 3;
 
 const CURRENCY = { AU: "A$", NZ: "NZ$" };
 let country = "AU";
 const curSym = () => CURRENCY[country] || "$";
 const fmtMoney = n => curSym() + Math.round(n).toLocaleString();
 const fmtNum = n => Math.round(n).toLocaleString();
+
+// Memoised: called per row, but only ~60 distinct weeks exist. toLocaleDateString
+// is slow enough that skipping this costs many seconds on a full load.
 const _wCache = new Map();
 const fmtWeek = d => {
   let v = _wCache.get(d);
   if(v) return v;
-  v = new Date(d + "T00:00:00").toLocaleDateString("en-AU", { day:"2-digit", month:"short" });
+  v = new Date(d + "T00:00:00").toLocaleDateString("en-AU", { day:"2-digit", month:"short", year:"2-digit" });
   _wCache.set(d, v);
   return v;
 };
 
-const PAGE_SIZE = 25000;
+// Distribution / returns sites are not stores a rep visits. Kept consistent with
+// the main Inventory Tracker so the two dashboards agree.
+function isRealStore(name){
+  if(!name) return true;
+  if(/returns centre/i.test(name)) return false;
+  if(/^crc\b/i.test(name)) return false;
+  if(/fulfilment centre/i.test(name) && !/trade/i.test(name)) return false;
+  return true;
+}
 
-// The NANO Supabase instance intermittently 500s when several large reads
-// land together (memory pressure, not a data problem). Retry before failing.
+let rows = [];
+let metric = "sales_value";
+let rowLimit = 40;
+let filters = { state:"all", weekFrom:null, weekTo:null, model:"", store:"" };
+
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+// The NANO Supabase instance intermittently 500s when several large reads land
+// together. Retry before surfacing an error to whoever opened the page.
 async function sbFetch(path, attempt = 0){
   const MAX = 4;
   try{
@@ -597,19 +242,12 @@ async function sbFetch(path, attempt = 0){
     });
     if(!r.ok){
       const retryable = r.status >= 500 || r.status === 429;
-      if(retryable && attempt < MAX){
-        await sleep(400 * Math.pow(2, attempt));
-        return sbFetch(path, attempt + 1);
-      }
-      throw new Error("Supabase returned " + r.status +
-        (attempt ? " after " + (attempt + 1) + " attempts" : ""));
+      if(retryable && attempt < MAX){ await sleep(400 * Math.pow(2, attempt)); return sbFetch(path, attempt+1); }
+      throw new Error("Supabase returned " + r.status + (attempt ? " after " + (attempt+1) + " attempts" : ""));
     }
     return await r.json();
   }catch(err){
-    if(err instanceof TypeError && attempt < MAX){
-      await sleep(400 * Math.pow(2, attempt));
-      return sbFetch(path, attempt + 1);
-    }
+    if(err instanceof TypeError && attempt < MAX){ await sleep(400 * Math.pow(2, attempt)); return sbFetch(path, attempt+1); }
     throw err;
   }
 }
@@ -617,83 +255,55 @@ async function sbFetch(path, attempt = 0){
 async function loadData(){
   const started = performance.now();
   try{
-    // How many fact rows are there? (cheap HEAD-style count)
-    let cntRes, cntTry = 0;
+    let cnt, tries = 0;
     while(true){
-      cntRes = await fetch(SUPABASE_URL + "/rest/v1/bunnings_facts?select=wk_start&limit=1", {
-        headers: {
-          apikey: SUPABASE_KEY,
-          Authorization: "Bearer " + SUPABASE_KEY,
-          Prefer: "count=exact"
-        }
+      cnt = await fetch(SUPABASE_URL + "/rest/v1/bunnings_facts?select=wk_start&limit=1", {
+        headers: { apikey: SUPABASE_KEY, Authorization: "Bearer " + SUPABASE_KEY, Prefer: "count=exact" }
       });
-      if(cntRes.ok) break;
-      if((cntRes.status >= 500 || cntRes.status === 429) && cntTry < 4){
-        await sleep(400 * Math.pow(2, cntTry++));
-        continue;
-      }
-      throw new Error("Supabase returned " + cntRes.status);
+      if(cnt.ok) break;
+      if((cnt.status >= 500 || cnt.status === 429) && tries < 4){ await sleep(400 * Math.pow(2, tries++)); continue; }
+      throw new Error("Supabase returned " + cnt.status);
     }
-    const range = cntRes.headers.get("content-range") || "";
-    const totalRows = parseInt(range.split("/")[1], 10) || 0;
+    const totalRows = parseInt((cnt.headers.get("content-range")||"").split("/")[1], 10) || 0;
 
-    // Smaller pages keep peak memory down; run only a few at a time so we do
-    // not simply move the concurrency problem somewhere else.
-    const CONCURRENCY = 3;
     const offsets = [];
-    for(let off = 0; off < totalRows; off += PAGE_SIZE) offsets.push(off);
-
-    const factPages = [];
+    for(let o = 0; o < totalRows; o += PAGE_SIZE) offsets.push(o);
+    const pages = [];
     for(let i = 0; i < offsets.length; i += CONCURRENCY){
-      const slice = offsets.slice(i, i + CONCURRENCY).map(off =>
-        sbFetch("bunnings_facts?select=*&order=wk_start.asc&offset=" + off + "&limit=" + PAGE_SIZE));
-      factPages.push(...await Promise.all(slice));
+      const slice = offsets.slice(i, i + CONCURRENCY).map(o =>
+        sbFetch("bunnings_facts?select=*&order=wk_start.asc&offset=" + o + "&limit=" + PAGE_SIZE));
+      pages.push(...await Promise.all(slice));
     }
-
     const [stores, items] = await Promise.all([
       sbFetch("bunnings_stores?select=*"),
       sbFetch("bunnings_items?select=*")
     ]);
 
-    // Lookup maps so each fact row stays tiny over the wire
-    const storeMap = new Map(stores.map(s => [s.country + "|" + s.store, s]));
-    const itemMap = new Map(items.map(i => [i.item, i.description]));
+    const smap = new Map(stores.map(s => [s.country + "|" + s.store, s]));
+    const imap = new Map(items.map(i => [i.item, i.description]));
 
-    rows = factPages.flat().map(f => {
-      const s = storeMap.get(f.country + "|" + f.store) || {};
+    rows = pages.flat().map(f => {
+      const s = smap.get(f.country + "|" + f.store) || {};
       return {
-        country: f.country,
-        wk_start: f.wk_start,
-        // precomputed once: avoids millions of new Date() calls per render
-        mkey: monthInfo(f.wk_start).key,
-        qkey: quarterInfo(f.wk_start).key,
-        item: f.item,
-        description: itemMap.get(f.item) || "",
-        store: f.store,
-        store_name: s.store_name || f.store,
-        state: s.state || "",
-        order_type: s.order_type || "Bunnings Retail",
-        units_sold: Number(f.units_sold) || 0,
-        sales_value: Number(f.sales_value) || 0,
-        soh: Number(f.soh) || 0,
-        soh_value: Number(f.soh_value) || 0
+        country: f.country, wk_start: f.wk_start, item: f.item,
+        description: imap.get(f.item) || "",
+        store: f.store, store_name: s.store_name || f.store, state: s.state || "",
+        units_sold: Number(f.units_sold) || 0, sales_value: Number(f.sales_value) || 0
       };
-    });
+    }).filter(r => isRealStore(r.store_name));
 
-    if(rows.length === 0){
+    if(!rows.length){
       const el = document.getElementById("loadError");
       el.style.display = "block";
-      el.textContent = "Connected to Supabase, but no rows found yet in bunnings_weekly_inventory. Import a weekly CSV to see data here.";
+      el.textContent = "Connected to Supabase but found no rows. Import a weekly CSV on the main tracker first.";
     }
 
-    indexWeeks();
     buildFilters();
-    if(!window.__uploadReady){ initUpload(); window.__uploadReady = true; }
+    showLatestWeek();
     const secs = ((performance.now() - started)/1000).toFixed(1);
     document.getElementById("lastUpdated").textContent =
-      "Loaded " + new Date().toLocaleString("en-AU", { dateStyle:"medium", timeStyle:"short" }) +
+      "Loaded " + new Date().toLocaleString("en-AU",{dateStyle:"medium",timeStyle:"short"}) +
       "  \u00b7  " + rows.length.toLocaleString() + " rows in " + secs + "s";
-    showLatestWeek();
     render();
   }catch(err){
     const el = document.getElementById("loadError");
@@ -703,266 +313,83 @@ async function loadData(){
   }
 }
 
-let storeSel, quarterSel, monthFromSel, monthToSel, weekFromSel, weekToSel;
-
 let weekCache = {};
-function allWeeksSorted(){
-  if(!weekCache[country]){
-    weekCache[country] = [...new Set(rows.filter(r => r.country === country).map(r => r.wk_start))].sort();
-  }
-  return weekCache[country];
+function weeksFor(c){
+  if(!weekCache[c]) weekCache[c] = [...new Set(rows.filter(r => r.country === c).map(r => r.wk_start))].sort();
+  return weekCache[c];
 }
 
-// Weeks available given the currently selected quarter
-// week -> month/quarter key, built once per country from the loaded rows.
-// Avoids re-parsing dates every time a dropdown is rebuilt.
-let weekMonthKey = new Map();
-let weekQuarterKey = new Map();
-function indexWeeks(){
-  weekMonthKey = new Map();
-  weekQuarterKey = new Map();
-  for(const r of rows){
-    if(!weekMonthKey.has(r.wk_start)){
-      weekMonthKey.set(r.wk_start, r.mkey);
-      weekQuarterKey.set(r.wk_start, r.qkey);
-    }
-  }
+function showLatestWeek(){
+  const el = document.getElementById("latestWeek");
+  const w = weeksFor(country);
+  if(!w.length){ el.textContent = "No data"; return; }
+  const latest = w[w.length-1];
+  const label = new Date(latest + "T00:00:00").toLocaleDateString("en-AU",{day:"2-digit",month:"short",year:"numeric"});
+  const wks = Math.floor((Date.now() - new Date(latest + "T00:00:00").getTime())/86400000/7);
+  let cls = "fresh", note = "Updated";
+  if(wks >= 4){ cls = "stale"; note = wks + " weeks behind"; }
+  else if(wks >= 2){ cls = "due"; note = wks + " weeks behind"; }
+  el.innerHTML = "Latest Week: " + label + ' <span class="stale-badge ' + cls + '">' + note + "</span>";
 }
 
-function weeksInQuarter(){
-  const all = allWeeksSorted();
-  if(filters.quarter === "all") return all;
-  const q = Number(filters.quarter);
-  return all.filter(w => weekQuarterKey.get(w) === q);
-}
-
-// Weeks available given quarter AND the selected month range
-function weeksInMonthRange(){
-  return weeksInQuarter().filter(w => {
-    const k = weekMonthKey.get(w);
-    return k >= filters.monthFrom && k <= filters.monthTo;
-  });
-}
-
-// Distribution / returns sites are not stores a rep can visit, and a returns
-// centre with huge stock and zero sales would permanently head the No Movement
-// list. Wacol is deliberately KEPT: it is a Trade Centre with real trade sales.
-// Combined these sites are ~0.06% of sales, so excluding them barely moves totals.
-function isRealStore(name){
-  if(!name) return true;
-  if(/returns centre/i.test(name)) return false;
-  if(/^crc\b/i.test(name)) return false;
-  if(/fulfilment centre/i.test(name) && !/trade/i.test(name)) return false;
-  return true;
-}
-
-function optTag(value, label){
-  return '<option value="' + value + '">' + label + '</option>';
-}
-
-// Rebuild the State chips for the active country
 function rebuildStateChips(){
-  const states = [...new Set(rows.filter(r => r.country === country).map(r => r.state))].sort();
-  const stateWrap = document.getElementById("stateFilters");
-  stateWrap.innerHTML = '<span class="chip active" data-state="all">All</span>' +
+  const states = [...new Set(rows.filter(r => r.country === country).map(r => r.state))].filter(Boolean).sort();
+  const wrap = document.getElementById("stateFilters");
+  wrap.innerHTML = '<span class="chip active" data-state="all">All</span>' +
     states.map(s => '<span class="chip" data-state="' + s + '">' + s + '</span>').join("");
-  stateWrap.querySelectorAll(".chip").forEach(chip => {
+  wrap.querySelectorAll(".chip").forEach(chip => {
     chip.addEventListener("click", () => {
-      stateWrap.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
+      wrap.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
       chip.classList.add("active");
       filters.state = chip.dataset.state;
-      refreshStoreOptions();
       render();
     });
   });
 }
 
-// Rebuild the Quarter list for the active country
-function rebuildQuarterOptions(){
-  const qMap = new Map();
-  allWeeksSorted().forEach(w => {
-    qMap.set(weekQuarterKey.get(w), quarterInfo(w).label);
-  });
-  quarterSel.innerHTML = optTag("all", "All Quarters") +
-    [...qMap.entries()].sort((a,b) => a[0]-b[0]).map(e => optTag(e[0], e[1])).join("");
-}
-
-// Rebuild Store list from the selected State
-function refreshStoreOptions(){
-  const scoped = rows.filter(r => r.country === country && isRealStore(r.store_name) && (filters.state === "all" || r.state === filters.state));
-  const list = [...new Map(scoped.map(r => [r.store, r.store_name])).entries()]
-    .sort((a,b) => a[1].localeCompare(b[1]));
-  storeSel.innerHTML = optTag("all", "All Stores") +
-    list.map(e => optTag(e[0], e[1])).join("");
-  if(filters.store !== "all" && !list.some(e => e[0] === filters.store)){
-    filters.store = "all";
-  }
-  storeSel.value = filters.store;
-}
-
-// Rebuild Month From/To from the selected Quarter
-function refreshMonthOptions(){
-  const mMap = new Map();
-  weeksInQuarter().forEach(w => {
-    mMap.set(weekMonthKey.get(w), monthInfo(w).label);
-  });
-  const entries = [...mMap.entries()].sort((a,b) => a[0]-b[0]);
-  const keys = entries.map(e => e[0]);
-  const opts = entries.map(e => optTag(e[0], e[1])).join("");
-  monthFromSel.innerHTML = opts;
-  monthToSel.innerHTML = opts;
-
-  if(!keys.includes(filters.monthFrom)) filters.monthFrom = keys[0];
-  if(!keys.includes(filters.monthTo)) filters.monthTo = keys[keys.length - 1];
-  if(filters.monthFrom > filters.monthTo){
-    filters.monthFrom = keys[0];
-    filters.monthTo = keys[keys.length - 1];
-  }
-  monthFromSel.value = filters.monthFrom;
-  monthToSel.value = filters.monthTo;
-}
-
-// Rebuild Week From/To from Quarter + Month range
-function refreshWeekOptions(){
-  const weeks = weeksInMonthRange();
-  const opts = weeks.map(w => optTag(w, fmtWeek(w) + " \u2019" + w.slice(2,4))).join("");
-  weekFromSel.innerHTML = opts;
-  weekToSel.innerHTML = opts;
-
-  if(!weeks.includes(filters.weekFrom)) filters.weekFrom = weeks[0];
-  if(!weeks.includes(filters.weekTo)) filters.weekTo = weeks[weeks.length - 1];
-  if(filters.weekFrom > filters.weekTo){
-    filters.weekFrom = weeks[0];
-    filters.weekTo = weeks[weeks.length - 1];
-  }
-  weekFromSel.value = filters.weekFrom;
-  weekToSel.value = filters.weekTo;
+function rebuildWeeks(){
+  const w = weeksFor(country);
+  const opts = w.map(x => '<option value="' + x + '">' + fmtWeek(x) + '</option>').join("");
+  const f = document.getElementById("weekFrom"), t = document.getElementById("weekTo");
+  f.innerHTML = opts; t.innerHTML = opts;
+  filters.weekFrom = w[0]; filters.weekTo = w[w.length-1];
+  f.value = filters.weekFrom; t.value = filters.weekTo;
 }
 
 function buildFilters(){
-  storeSel = document.getElementById("storeFilter");
-  quarterSel = document.getElementById("quarterFilter");
-  monthFromSel = document.getElementById("monthFromFilter");
-  monthToSel = document.getElementById("monthToFilter");
-  weekFromSel = document.getElementById("weekFromFilter");
-  weekToSel = document.getElementById("weekToFilter");
-
-  // State chips -> cascade into Store list. Rebuilt on country switch.
   rebuildStateChips();
+  rebuildWeeks();
 
-  storeSel.addEventListener("change", () => { filters.store = storeSel.value; render(); });
-
-  rebuildQuarterOptions();
-
-  // Quarter -> cascade into Months, then Weeks
-  quarterSel.addEventListener("change", () => {
-    filters.quarter = quarterSel.value;
-    filters.monthFrom = null;
-    filters.monthTo = null;
-    filters.weekFrom = null;
-    filters.weekTo = null;
-    refreshMonthOptions();
-    refreshWeekOptions();
+  document.getElementById("weekFrom").addEventListener("change", e => {
+    filters.weekFrom = e.target.value;
+    if(filters.weekFrom > filters.weekTo){ filters.weekTo = filters.weekFrom; document.getElementById("weekTo").value = filters.weekTo; }
+    render();
+  });
+  document.getElementById("weekTo").addEventListener("change", e => {
+    filters.weekTo = e.target.value;
+    if(filters.weekTo < filters.weekFrom){ filters.weekFrom = filters.weekTo; document.getElementById("weekFrom").value = filters.weekFrom; }
     render();
   });
 
-  // Month range -> cascade into Weeks
-  monthFromSel.addEventListener("change", () => {
-    filters.monthFrom = Number(monthFromSel.value);
-    if(filters.monthFrom > filters.monthTo){
-      filters.monthTo = filters.monthFrom;
-      monthToSel.value = filters.monthTo;
-    }
-    refreshWeekOptions();
-    render();
-  });
-  monthToSel.addEventListener("change", () => {
-    filters.monthTo = Number(monthToSel.value);
-    if(filters.monthTo < filters.monthFrom){
-      filters.monthFrom = filters.monthTo;
-      monthFromSel.value = filters.monthFrom;
-    }
-    refreshWeekOptions();
-    render();
-  });
+  let deb;
+  const onSearch = () => { clearTimeout(deb); deb = setTimeout(render, 220); };
+  document.getElementById("modelSearch").addEventListener("input", e => { filters.model = e.target.value.trim().toLowerCase(); onSearch(); });
+  document.getElementById("storeSearch").addEventListener("input", e => { filters.store = e.target.value.trim().toLowerCase(); onSearch(); });
 
-  // Week range (clamped to stay valid)
-  weekFromSel.addEventListener("change", () => {
-    filters.weekFrom = weekFromSel.value;
-    if(filters.weekFrom > filters.weekTo){
-      filters.weekTo = filters.weekFrom;
-      weekToSel.value = filters.weekTo;
-    }
-    render();
-  });
-  weekToSel.addEventListener("change", () => {
-    filters.weekTo = weekToSel.value;
-    if(filters.weekTo < filters.weekFrom){
-      filters.weekFrom = filters.weekTo;
-      weekFromSel.value = filters.weekFrom;
-    }
-    render();
-  });
-
-  // Reset all filters
-  document.getElementById("resetFilters").addEventListener("click", () => {
-    filters.state = "all";
-    filters.type = "all";
-    filters.store = "all";
-    filters.quarter = "all";
-    filters.monthFrom = null;
-    filters.monthTo = null;
-    filters.weekFrom = null;
-    filters.weekTo = null;
-    rebuildStateChips();
-    document.querySelectorAll("#typeFilters .chip").forEach(c => c.classList.remove("active"));
-    document.querySelector('#typeFilters [data-type="all"]').classList.add("active");
-    quarterSel.value = "all";
-    refreshStoreOptions();
-    refreshMonthOptions();
-    refreshWeekOptions();
-    render();
-  });
-
-  document.getElementById("storeRankToggle").querySelectorAll("span").forEach(el => {
+  document.getElementById("metricToggle").querySelectorAll("span").forEach(el => {
     el.addEventListener("click", () => {
-      document.querySelectorAll("#storeRankToggle span").forEach(s => s.classList.remove("active"));
+      document.querySelectorAll("#metricToggle span").forEach(s => s.classList.remove("active"));
       el.classList.add("active");
-      storeRank = el.dataset.rank;
+      metric = el.dataset.metric;
       render();
     });
   });
-
-  document.getElementById("typeFilters").querySelectorAll(".chip").forEach(chip => {
-    chip.addEventListener("click", () => {
-      document.querySelectorAll("#typeFilters .chip").forEach(c => c.classList.remove("active"));
-      chip.classList.add("active");
-      filters.type = chip.dataset.type;
+  document.getElementById("rowLimitToggle").querySelectorAll("span").forEach(el => {
+    el.addEventListener("click", () => {
+      document.querySelectorAll("#rowLimitToggle span").forEach(s => s.classList.remove("active"));
+      el.classList.add("active");
+      rowLimit = Number(el.dataset.limit);
       render();
-    });
-  });
-
-  ["stateGranularityToggle","storeGranularityToggle"].forEach(id => {
-    document.getElementById(id).querySelectorAll("span").forEach(el => {
-      el.addEventListener("click", () => {
-        document.querySelectorAll("#" + id + " span").forEach(s => s.classList.remove("active"));
-        el.classList.add("active");
-        if(id === "stateGranularityToggle"){ stateGranularity = el.dataset.gran; }
-        else { storeGranularity = el.dataset.gran; }
-        render();
-      });
-    });
-  });
-
-  ["stateMetricToggle","storeMetricToggle"].forEach(id => {
-    document.getElementById(id).querySelectorAll("span").forEach(el => {
-      el.addEventListener("click", () => {
-        document.querySelectorAll("#" + id + " span").forEach(s => s.classList.remove("active"));
-        el.classList.add("active");
-        if(id === "stateMetricToggle"){ stateMetric = el.dataset.metric; }
-        else { storeMetric = el.dataset.metric; }
-        render();
-      });
     });
   });
 
@@ -972,417 +399,195 @@ function buildFilters(){
       document.querySelectorAll("#countryToggle button").forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
       country = btn.dataset.country;
-      // country changes the whole universe of stores/states/weeks, so reset
       filters.state = "all";
-      filters.type = "all";
-      filters.store = "all";
-      filters.quarter = "all";
-      filters.monthFrom = null;
-      filters.monthTo = null;
-      filters.weekFrom = null;
-      filters.weekTo = null;
-      quarterSel.value = "all";
-      document.querySelectorAll("#typeFilters .chip").forEach(c => c.classList.remove("active"));
-      document.querySelector('#typeFilters [data-type="all"]').classList.add("active");
       rebuildStateChips();
-      refreshStoreOptions();
-      rebuildQuarterOptions();
-      refreshMonthOptions();
-      refreshWeekOptions();
+      rebuildWeeks();
       showLatestWeek();
       render();
     });
   });
 
-  // Initial population
-  refreshStoreOptions();
-  refreshMonthOptions();
-  refreshWeekOptions();
+  document.getElementById("resetFilters").addEventListener("click", () => {
+    filters.state = "all"; filters.model = ""; filters.store = "";
+    document.getElementById("modelSearch").value = "";
+    document.getElementById("storeSearch").value = "";
+    rebuildStateChips();
+    rebuildWeeks();
+    render();
+  });
+
+  document.getElementById("exportStores").addEventListener("click", exportStoreCsv);
+  document.getElementById("exportMatrix").addEventListener("click", exportMatrixCsv);
 }
 
 function applyFilters(){
-  const qFilterNum = Number(filters.quarter);
   return rows.filter(r =>
     r.country === country &&
-    isRealStore(r.store_name) &&
     (filters.state === "all" || r.state === filters.state) &&
-    (filters.type === "all" || r.order_type === filters.type) &&
-    (filters.store === "all" || r.store === filters.store) &&
-    (!filters.weekFrom || !filters.weekTo || (r.wk_start >= filters.weekFrom && r.wk_start <= filters.weekTo)) &&
-    (filters.quarter === "all" || r.qkey === qFilterNum) &&
-    (filters.monthFrom === null || filters.monthTo === null || (r.mkey >= filters.monthFrom && r.mkey <= filters.monthTo))
+    (!filters.weekFrom || (r.wk_start >= filters.weekFrom && r.wk_start <= filters.weekTo)) &&
+    (!filters.model || r.item.toLowerCase().includes(filters.model) || (r.description||"").toLowerCase().includes(filters.model)) &&
+    (!filters.store || (r.store_name||"").toLowerCase().includes(filters.store))
   );
 }
 
-// Newest week present for the active country, with a freshness badge.
-// Without this, a dashboard nobody has updated for a month still looks healthy.
-function showLatestWeek(){
-  const el = document.getElementById("latestWeek");
-  const weeks = allWeeksSorted();
-  if(!weeks.length){ el.textContent = "No data loaded"; return; }
+// One pass produces everything the three tables need.
+function aggregate(f){
+  const models = new Map();   // item -> {desc, sales, units, ranged:Set, selling:Set}
+  const stores = new Map();   // store -> {name, state, sales, units, models:Map}
+  const pairs = new Map();    // item|store -> {sales, units}
 
-  const latest = weeks[weeks.length - 1];
-  const label = new Date(latest + "T00:00:00").toLocaleDateString("en-AU",
-    { day:"2-digit", month:"short", year:"numeric" });
+  for(const r of f){
+    let m = models.get(r.item);
+    if(!m){ m = { desc:r.description, sales:0, units:0, ranged:new Set(), selling:new Set() }; models.set(r.item, m); }
+    m.sales += r.sales_value; m.units += r.units_sold;
+    m.ranged.add(r.store);
+    if(r.units_sold > 0) m.selling.add(r.store);
 
-  const days = Math.floor((Date.now() - new Date(latest + "T00:00:00").getTime()) / 86400000);
-  const wks = Math.floor(days / 7);
-  let cls = "fresh", note = "Updated";
-  if(wks >= 4){ cls = "stale"; note = wks + " weeks behind"; }
-  else if(wks >= 2){ cls = "due"; note = wks + " weeks behind"; }
+    let s = stores.get(r.store);
+    if(!s){ s = { name:r.store_name, state:r.state, sales:0, units:0, models:new Map() }; stores.set(r.store, s); }
+    s.sales += r.sales_value; s.units += r.units_sold;
+    if(r.units_sold > 0 || r.sales_value > 0){
+      s.models.set(r.item, (s.models.get(r.item)||0) + r[metric]);
+    }
 
-  el.innerHTML = "Latest Week: " + label +
-    ' <span class="stale-badge ' + cls + '">' + note + "</span>";
+    const k = r.item + "|" + r.store;
+    let p = pairs.get(k);
+    if(!p){ p = { sales:0, units:0 }; pairs.set(k, p); }
+    p.sales += r.sales_value; p.units += r.units_sold;
+  }
+  return { models, stores, pairs };
 }
 
 function render(){
   const f = applyFilters();
+  const { models, stores, pairs } = aggregate(f);
 
-  const total = f.reduce((s,r) => s + Number(r.sales_value||0), 0);
-  const trade = f.filter(r => r.order_type === "Bunnings Trade").reduce((s,r) => s + Number(r.sales_value||0), 0);
-  const retail = f.filter(r => r.order_type === "Bunnings Retail").reduce((s,r) => s + Number(r.sales_value||0), 0);
-  const units = f.reduce((s,r) => s + Number(r.units_sold||0), 0);
-  const stores = new Set(f.map(r => r.store)).size;
+  const total = f.reduce((s,r) => s + r.sales_value, 0);
+  const units = f.reduce((s,r) => s + r.units_sold, 0);
+  const sellingModels = [...models.values()].filter(m => m.units > 0).length;
+  const sellingStores = [...stores.values()].filter(s => s.units > 0).length;
+  const livePairs = [...pairs.values()].filter(p => p.units > 0).length;
 
   document.getElementById("kpiTotal").textContent = fmtMoney(total);
-  document.getElementById("kpiTrade").textContent = fmtMoney(trade);
-  document.getElementById("kpiTradeSub").textContent = total ? Math.round(trade/total*100) + "% of total \u00b7 site type, not order type" : "";
-  document.getElementById("kpiRetail").textContent = fmtMoney(retail);
-  document.getElementById("kpiRetailSub").textContent = total ? Math.round(retail/total*100) + "% of total" : "";
-  document.getElementById("kpiStores").textContent = fmtNum(stores);
+  document.getElementById("kpiTotalSub").textContent =
+    filters.weekFrom ? fmtWeek(filters.weekFrom) + " to " + fmtWeek(filters.weekTo) : "";
   document.getElementById("kpiUnits").textContent = fmtNum(units);
+  document.getElementById("kpiModels").textContent = fmtNum(sellingModels);
+  document.getElementById("kpiModelsSub").textContent = "of " + models.size + " ranged";
+  document.getElementById("kpiStores").textContent = fmtNum(sellingStores);
+  document.getElementById("kpiStoresSub").textContent = "of " + stores.size + " with stock";
+  document.getElementById("kpiPairs").textContent = fmtNum(livePairs);
 
-  renderStateTrend(f);
-  renderStoreTrend(f);
-  renderTopStores(f);
-  renderTopSkus(f);
-  renderNoMovement(f);
+  renderModels(models);
+  renderStores(stores);
+  renderMatrix(models, stores, pairs);
 }
 
-function renderStateTrend(f){
-  const buckets = getBuckets(f, stateGranularity);
-  const states = [...new Set(f.map(r => r.state))].sort();
-  const n = buckets.keys.length;
+function renderModels(models){
+  const list = [...models.entries()].sort((a,b) => b[1][metric === "units_sold" ? "units" : "sales"] - a[1][metric === "units_sold" ? "units" : "sales"]);
+  const body = document.getElementById("modelBody");
+  if(!list.length){ body.innerHTML = '<tr><td colspan="7" class="empty">No data for this selection</td></tr>'; return; }
+  body.innerHTML = list.map(([sku, m]) => {
+    const avg = m.selling.size ? (metric === "units_sold" ? m.units : m.sales) / m.selling.size : 0;
+    return '<tr><td>' + sku + '</td><td class="desc">' + (m.desc || "").slice(0,60) + '</td>' +
+      '<td class="num">' + (metric === "units_sold" ? fmtNum(m.units) : fmtMoney(m.sales)) + '</td>' +
+      '<td class="num">' + fmtNum(m.units) + '</td>' +
+      '<td class="num">' + fmtNum(m.selling.size) + '</td>' +
+      '<td class="num">' + fmtNum(m.ranged.size) + '</td>' +
+      '<td class="num">' + (metric === "units_sold" ? fmtNum(avg) : fmtMoney(avg)) + '</td></tr>';
+  }).join("");
+}
 
-  // one pass over the rows, accumulating straight into each series array
-  const series = new Map(states.map(s => [s, new Array(n).fill(0)]));
-  for(const r of f){
-    const i = buckets.index.get(bucketKey(r, stateGranularity));
-    if(i === undefined) continue;
-    series.get(r.state)[i] += Number(r[stateMetric]) || 0;
+function renderStores(stores){
+  const key = metric === "units_sold" ? "units" : "sales";
+  const list = [...stores.entries()].sort((a,b) => b[1][key] - a[1][key]).slice(0, 100);
+  const body = document.getElementById("storeBody");
+  if(!list.length){ body.innerHTML = '<tr><td colspan="6" class="empty">No data for this selection</td></tr>'; return; }
+  body.innerHTML = list.map(([id, s]) => {
+    let top = "", topVal = -1;
+    for(const [item, v] of s.models){ if(v > topVal){ topVal = v; top = item; } }
+    return '<tr><td>' + s.name + '</td><td>' + s.state + '</td>' +
+      '<td class="num">' + (metric === "units_sold" ? fmtNum(s.units) : fmtMoney(s.sales)) + '</td>' +
+      '<td class="num">' + fmtNum(s.units) + '</td>' +
+      '<td class="num">' + fmtNum([...s.models.values()].filter(v => v > 0).length) + '</td>' +
+      '<td class="desc">' + (top || "\u2014") + '</td></tr>';
+  }).join("");
+}
+
+function renderMatrix(models, stores, pairs){
+  const mkey = metric === "units_sold" ? "units" : "sales";
+  const modelList = [...models.entries()].sort((a,b) => b[1][mkey] - a[1][mkey]).map(e => e[0]);
+  let storeList = [...stores.entries()].sort((a,b) => b[1][mkey] - a[1][mkey]);
+  if(rowLimit) storeList = storeList.slice(0, rowLimit);
+
+  const head = document.getElementById("matrixHead");
+  head.innerHTML = '<th>Store</th>' + modelList.map(m => '<th class="num">' + m + '</th>').join("") + '<th class="num">Total</th>';
+
+  const body = document.getElementById("matrixBody");
+  if(!storeList.length || !modelList.length){
+    body.innerHTML = '<tr><td class="empty">No data for this selection</td></tr>';
+    return;
   }
-
-  const datasets = states.map((s,i) => ({
-    label: s,
-    data: series.get(s),
-    borderColor: stateColor(s,i),
-    backgroundColor: stateColor(s,i),
-    tension: 0.3,
-    pointRadius: 3
-  }));
-
-  const ctx = document.getElementById("stateTrendChart");
-  if(stateChart) stateChart.destroy();
-  if(n === 0){ return; }
-  stateChart = new Chart(ctx, {
-    type: "line",
-    data: { labels: buckets.labels, datasets },
-    options: chartOpts(stateMetric)
-  });
+  body.innerHTML = storeList.map(([id, s]) => {
+    const cells = modelList.map(m => {
+      const p = pairs.get(m + "|" + id);
+      const v = p ? p[mkey] : 0;
+      if(!v) return '<td class="num zero">&middot;</td>';
+      return '<td class="num">' + (metric === "units_sold" ? fmtNum(v) : fmtMoney(v)) + '</td>';
+    }).join("");
+    return '<tr><td>' + s.name + '</td>' + cells +
+      '<td class="num"><strong>' + (metric === "units_sold" ? fmtNum(s.units) : fmtMoney(s.sales)) + '</strong></td></tr>';
+  }).join("");
 }
 
-function renderStoreTrend(f){
-  const buckets = getBuckets(f, storeGranularity);
-  const n = buckets.keys.length;
-
-  // pass 1: totals + names per store
-  const totals = new Map();
-  const names = new Map();
-  for(const r of f){
-    totals.set(r.store, (totals.get(r.store) || 0) + (Number(r.sales_value) || 0));
-    if(!names.has(r.store)) names.set(r.store, r.store_name);
-  }
-  const top = [...totals.entries()].sort((a,b) => b[1]-a[1]).slice(0,10).map(e => e[0]);
-  const topSet = new Set(top);
-
-  // pass 2: fill the 10 series in one sweep
-  const series = new Map(top.map(id => [id, new Array(n).fill(0)]));
-  for(const r of f){
-    if(!topSet.has(r.store)) continue;
-    const i = buckets.index.get(bucketKey(r, storeGranularity));
-    if(i === undefined) continue;
-    series.get(r.store)[i] += Number(r[storeMetric]) || 0;
-  }
-
-  const datasets = top.map((id,i) => ({
-    label: names.get(id),
-    data: series.get(id),
-    borderColor: stateColor(id,i),
-    backgroundColor: stateColor(id,i),
-    tension: 0.3,
-    pointRadius: 3
-  }));
-
-  const ctx = document.getElementById("storeTrendChart");
-  if(storeChart) storeChart.destroy();
-  if(n === 0){ return; }
-  storeChart = new Chart(ctx, {
-    type: "line",
-    data: { labels: buckets.labels, datasets },
-    options: chartOpts(storeMetric)
-  });
+/* ---------- CSV export ---------- */
+function download(name, text){
+  const blob = new Blob([text], { type:"text/csv;charset=utf-8;" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
-
-function chartOpts(metric){
-  return {
-    responsive: true,
-    maintainAspectRatio: false,
-    scales: {
-      x: { ticks: { color:"#8a92a6" }, grid: { color:"#1c2230" } },
-      y: {
-        ticks: {
-          color:"#8a92a6",
-          callback: v => metric === "sales_value" ? curSym()+v.toLocaleString() : v.toLocaleString()
-        },
-        grid: { color:"#1c2230" }
-      }
-    },
-    plugins: {
-      legend: { labels: { color:"#c7cbd6", boxWidth:10, font:{ size:11 } } },
-      tooltip: {
-        callbacks: {
-          label: ctx => `${ctx.dataset.label}: ${metric === "sales_value" ? fmtMoney(ctx.parsed.y) : fmtNum(ctx.parsed.y)}`
-        }
-      }
-    }
-  };
-}
-
-function renderTopStores(f){
-  const byStore = new Map();
-  for(const r of f){
-    let e = byStore.get(r.store);
-    if(!e){ e = { name:r.store_name, state:r.state, type:r.order_type, total:0 }; byStore.set(r.store, e); }
-    e.total += Number(r.sales_value) || 0;
-  }
-  // Bottom list is about weak SELLERS, so drop stores with no sales at all —
-  // those are a different problem and get their own No Movement panel.
-  let list = [...byStore.values()];
-  if(storeRank === "bottom") list = list.filter(e => e.total > 0);
-  list.sort((a,b) => storeRank === "top" ? b.total - a.total : a.total - b.total);
-  const rowsOut = list.slice(0,10);
-
-  document.getElementById("storeRankTitle").textContent =
-    storeRank === "top" ? "Top Stores" : "Weakest Stores";
-
-  const body = document.getElementById("topStoresBody");
-  body.innerHTML = rowsOut.length ? rowsOut.map(r => '<tr><td>' + r.name + '</td><td>' + r.state +
-    '</td><td><span class="badge ' + (r.type === "Bunnings Trade" ? "trade" : "retail") + '">' +
-    (r.type === "Bunnings Trade" ? "Trade Ctr" : "Retail") + '</span></td><td class="num">' +
-    fmtMoney(r.total) + '</td></tr>').join("")
-    : '<tr><td colspan="4" class="empty">No data for this selection</td></tr>';
-}
-
-// Stores carrying stock but selling nothing in the selected period.
-// This is the list a rep visit should target.
-function renderNoMovement(f){
-  const byStore = new Map();
-  for(const r of f){
-    let e = byStore.get(r.store);
-    if(!e){ e = { name:r.store_name, state:r.state, type:r.order_type, units:0, soh:0, sohVal:0 }; byStore.set(r.store, e); }
-    e.units += Number(r.units_sold) || 0;
-    e.soh += Number(r.soh) || 0;
-    e.sohVal += Number(r.soh_value) || 0;
-  }
-  const dead = [...byStore.values()].filter(e => e.units === 0)
-    .sort((a,b) => b.sohVal - a.sohVal);
-
-  document.getElementById("noMoveCount").textContent =
-    dead.length ? "  \u00b7  " + dead.length + " store" + (dead.length === 1 ? "" : "s") : "";
-
-  const body = document.getElementById("noMoveBody");
-  body.innerHTML = dead.length ? dead.slice(0,25).map(r => '<tr><td>' + r.name + '</td><td>' + r.state +
-    '</td><td><span class="badge ' + (r.type === "Bunnings Trade" ? "trade" : "retail") + '">' +
-    (r.type === "Bunnings Trade" ? "Trade Ctr" : "Retail") + '</span></td><td class="num">' +
-    fmtNum(r.soh) + '</td><td class="num">' + fmtMoney(r.sohVal) + '</td></tr>').join("")
-    : '<tr><td colspan="5" class="empty">Every store sold at least one unit \u2014 nothing stalled</td></tr>';
-}
-
-function renderTopSkus(f){
-  const bySku = {};
-  f.forEach(r => {
-    const key = r.item;
-    if(!bySku[key]) bySku[key] = { desc:r.description, units:0, total:0 };
-    bySku[key].units += Number(r.units_sold||0);
-    bySku[key].total += Number(r.sales_value||0);
-  });
-  const rowsOut = Object.entries(bySku).sort((a,b) => b[1].total - a[1].total).slice(0,10);
-  const body = document.getElementById("topSkusBody");
-  body.innerHTML = rowsOut.length ? rowsOut.map(([sku,r]) => `
-    <tr>
-      <td>${sku}</td>
-      <td>${(r.desc||"").slice(0,40)}</td>
-      <td class="num">${fmtNum(r.units)}</td>
-      <td class="num">${fmtMoney(r.total)}</td>
-    </tr>`).join("") : `<tr><td colspan="4" class="empty">No data for this selection</td></tr>`;
-}
-
-/* ---------- CSV upload -------------------------------------------------
-   Mirrors the manual pipeline: same column mapping, same YYYYMMDD -> ISO
-   date conversion, same AU/NZ detection, same duplicate handling. Writes
-   via upsert on (wk_start,item,store,country) so re-adding a week
-   overwrites it instead of creating duplicates.                          */
-
-const CSV_MAP = {
-  "Wk_Start":"wk_start", "Item":"item", "Description":"description",
-  "State":"state", "Store":"store", "Store_Name":"store_name",
-  "Units_Sold":"units_sold", "Sales_Value":"sales_value",
-  "SOH":"soh", "SOH_Value":"soh_value"
+const csvCell = v => {
+  const s = String(v == null ? "" : v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
 };
-const NZ_REGIONS = new Set(["NI","SI"]);
-let pendingRows = null;
+const rangeTag = () => (filters.weekFrom || "") + "_to_" + (filters.weekTo || "");
 
-function setStatus(msg, cls){
-  const el = document.getElementById("uploadStatus");
-  el.textContent = msg || "";
-  el.className = cls || "";
-}
-
-// Minimal RFC4180-ish parser: the Bunnings export quotes some fields and
-// descriptions can contain commas, so naive split(",") corrupts rows.
-function parseCsv(text){
-  const rows = [];
-  let row = [], field = "", inQ = false;
-  for(let i = 0; i < text.length; i++){
-    const c = text[i];
-    if(inQ){
-      if(c === '"'){
-        if(text[i+1] === '"'){ field += '"'; i++; }
-        else inQ = false;
-      } else field += c;
-    } else if(c === '"'){ inQ = true; }
-    else if(c === ","){ row.push(field); field = ""; }
-    else if(c === "\n"){ row.push(field); field = ""; if(row.some(v=>v!=="")) rows.push(row); row = []; }
-    else if(c !== "\r"){ field += c; }
+function exportStoreCsv(){
+  const f = applyFilters();
+  const { stores } = aggregate(f);
+  const lines = [["Store Number","Store Name","State","Sales","Units","Models Sold"].join(",")];
+  for(const [id, s] of [...stores.entries()].sort((a,b) => b[1].sales - a[1].sales)){
+    lines.push([id, s.name, s.state, s.sales.toFixed(2), s.units,
+      [...s.models.values()].filter(v => v > 0).length].map(csvCell).join(","));
   }
-  row.push(field);
-  if(row.some(v=>v!=="")) rows.push(row);
-  return rows;
+  download("bunnings_" + country + "_by_store_" + rangeTag() + ".csv", lines.join("\n"));
 }
 
-function csvToRecords(text){
-  const table = parseCsv(text);
-  if(table.length < 2) throw new Error("That file has no data rows.");
-  const head = table[0].map(h => h.trim());
-  const missing = Object.keys(CSV_MAP).filter(c => !head.includes(c));
-  if(missing.length) throw new Error("Not a Bunnings weekly export \u2014 missing column(s): " + missing.join(", "));
-  const idx = {};
-  for(const [src, dest] of Object.entries(CSV_MAP)) idx[dest] = head.indexOf(src);
-
-  const out = [];
-  const regions = new Set();
-  for(let i = 1; i < table.length; i++){
-    const t = table[i];
-    const raw = (t[idx.wk_start] || "").trim();
-    if(!raw) continue;
-    // YYYYMMDD -> YYYY-MM-DD
-    const iso = raw.length === 8 && /^\d{8}$/.test(raw)
-      ? raw.slice(0,4) + "-" + raw.slice(4,6) + "-" + raw.slice(6,8)
-      : raw;
-    if(!/^\d{4}-\d{2}-\d{2}$/.test(iso)) throw new Error("Unexpected Wk_Start value: " + raw);
-    const num = k => { const v = parseFloat(t[idx[k]]); return isNaN(v) ? 0 : v; };
-    const state = (t[idx.state] || "").trim();
-    regions.add(state);
-    out.push({
-      wk_start: iso,
-      item: (t[idx.item] || "").trim(),
-      description: (t[idx.description] || "").trim(),
-      state: state,
-      store: (t[idx.store] || "").trim(),
-      store_name: (t[idx.store_name] || "").trim(),
-      units_sold: num("units_sold"),
-      sales_value: num("sales_value"),
-      soh: num("soh"),
-      soh_value: num("soh_value")
-    });
+function exportMatrixCsv(){
+  const f = applyFilters();
+  const { models, stores, pairs } = aggregate(f);
+  const mkey = metric === "units_sold" ? "units" : "sales";
+  const modelList = [...models.entries()].sort((a,b) => b[1][mkey] - a[1][mkey]).map(e => e[0]);
+  const head = ["Store Number","Store Name","State"]
+    .concat(modelList.map(m => m + " - " + (models.get(m).desc || "").slice(0,40)))
+    .concat(["Total"]);
+  const lines = [head.map(csvCell).join(",")];
+  for(const [id, s] of [...stores.entries()].sort((a,b) => b[1][mkey] - a[1][mkey])){
+    const row = [id, s.name, s.state];
+    let tot = 0;
+    for(const m of modelList){
+      const p = pairs.get(m + "|" + id);
+      const v = p ? p[mkey] : 0;
+      tot += v;
+      row.push(metric === "units_sold" ? v : v.toFixed(2));
+    }
+    row.push(metric === "units_sold" ? tot : tot.toFixed(2));
+    lines.push(row.map(csvCell).join(","));
   }
-  if(!out.length) throw new Error("No usable rows found in that file.");
-
-  // NZ files carry NI/SI only; AU files carry state codes. Mixed = wrong file.
-  const isNZ = [...regions].every(s => NZ_REGIONS.has(s));
-  const isAU = [...regions].every(s => !NZ_REGIONS.has(s));
-  if(!isNZ && !isAU) throw new Error("File mixes NZ (NI/SI) and AU regions \u2014 please upload them separately.");
-  const ctry = isNZ ? "NZ" : "AU";
-  out.forEach(r => { r.country = ctry; });
-
-  const weeks = [...new Set(out.map(r => r.wk_start))].sort();
-  return { records: out, country: ctry, weeks };
-}
-
-async function upsertBatch(batch){
-  const res = await fetch(SUPABASE_URL + "/rest/v1/bunnings_weekly_inventory?on_conflict=wk_start,item,store,country", {
-    method: "POST",
-    headers: {
-      apikey: SUPABASE_KEY,
-      Authorization: "Bearer " + SUPABASE_KEY,
-      "Content-Type": "application/json",
-      Prefer: "resolution=merge-duplicates,return=minimal"
-    },
-    body: JSON.stringify(batch)
-  });
-  if(!res.ok) throw new Error("Supabase rejected the upload (" + res.status + "): " + (await res.text()).slice(0,200));
-}
-
-function initUpload(){
-  const input = document.getElementById("csvInput");
-  const choose = document.getElementById("chooseCsv");
-  const go = document.getElementById("doUpload");
-
-  choose.addEventListener("click", () => input.click());
-
-  input.addEventListener("change", async () => {
-    pendingRows = null;
-    go.disabled = true;
-    const file = input.files && input.files[0];
-    if(!file) return setStatus("");
-    try{
-      setStatus("Reading " + file.name + "\u2026", "busy");
-      const parsed = csvToRecords(await file.text());
-      pendingRows = parsed;
-      const wk = parsed.weeks.length === 1 ? parsed.weeks[0]
-        : parsed.weeks[0] + " to " + parsed.weeks[parsed.weeks.length-1];
-      setStatus(file.name + ": " + parsed.records.length.toLocaleString() + " rows, " +
-        parsed.country + ", week " + wk + ". Ready to add.", "ok");
-      go.disabled = false;
-    }catch(err){
-      setStatus(err.message, "err");
-    }
-  });
-
-  go.addEventListener("click", async () => {
-    if(!pendingRows) return;
-    const { records, country: ctry, weeks } = pendingRows;
-    go.disabled = true; choose.disabled = true;
-    try{
-      const SIZE = 500;
-      for(let i = 0; i < records.length; i += SIZE){
-        await upsertBatch(records.slice(i, i + SIZE));
-        setStatus("Saving\u2026 " + Math.min(i + SIZE, records.length).toLocaleString() +
-          " / " + records.length.toLocaleString(), "busy");
-      }
-      setStatus("Added " + records.length.toLocaleString() + " rows (" + ctry + ", " +
-        weeks.length + " week" + (weeks.length === 1 ? "" : "s") + "). Reloading\u2026", "ok");
-      pendingRows = null;
-      document.getElementById("csvInput").value = "";
-      weekCache = {};
-      await loadData();
-      setStatus("Dashboard updated.", "ok");
-    }catch(err){
-      setStatus(err.message, "err");
-    }finally{
-      choose.disabled = false;
-    }
-  });
+  download("bunnings_" + country + "_model_x_store_" + (metric === "units_sold" ? "units_" : "sales_") + rangeTag() + ".csv", lines.join("\n"));
 }
 
 loadData();
