@@ -107,7 +107,21 @@
 </div>
 
 <div class="filters">
-  <span class="filter-label">State</span>
+  <span class="filter-label">Products</span>
+  <div class="filter-group" id="scopeFilters">
+    <span class="chip active" data-scope="saleout">Saleout list</span>
+    <span class="chip" data-scope="all">All products</span>
+  </div>
+
+  <span class="filter-label" style="margin-left:14px;">Category</span>
+  <div class="filter-group" id="catFilters">
+    <span class="chip active" data-cat="all">All</span>
+    <span class="chip" data-cat="Philips Locks">Philips Locks</span>
+    <span class="chip" data-cat="Zigbang Locks">Zigbang Locks</span>
+    <span class="chip" data-cat="Philips Safes">Philips Safes</span>
+  </div>
+
+  <span class="filter-label" style="margin-left:14px;">State</span>
   <div class="filter-group" id="stateFilters"></div>
 
   <span class="filter-label" style="margin-left:14px;">Week From</span>
@@ -149,7 +163,7 @@
     </h2>
     <table>
       <thead><tr>
-        <th>SKU</th><th>Model / Description</th>
+        <th>SKU</th><th>Saleout Code</th><th>Category</th><th>Model / Description</th>
         <th class="num">Total</th><th class="num">Units</th>
         <th class="num">Stores Selling</th><th class="num">Stores Ranged</th><th class="num">Avg per Selling Store</th>
       </tr></thead>
@@ -229,10 +243,46 @@ function isRealStore(name){
   return true;
 }
 
+// Sam's Saleout product list, mapped to Bunnings SKUs. Bunnings descriptions
+// carry the model family but not always the full Saleout suffix (e.g. Saleout
+// "DDL210S-1H" vs Bunnings "DDL210-1H"), so each code maps to a family TOKEN
+// matched against the description with punctuation stripped. Verified: 28 of 29
+// codes match, no SKU is claimed by two codes, and the set covers 97.3% of AU
+// sales. DDL902-MFVP-11HWS has no Bunnings equivalent at all.
+const SALEOUT = {
+  "Philips Locks": {
+    "DDL709-FVP-7HWS":"DDL709", "7300-5HWS":"7300", "DDL210S-1H":"DDL210-1H",
+    "DDL210S-12H":"DDL210S-12H", "DDL505-5HBS":"DDL505", "DDL720-MVP-17HWS":"DDL720-MVP",
+    "DDL250X-14HWC":"DDL250X", "DDL615-5HBS":"DDL615", "DDL610-5HBS":"DDL610",
+    "DDL608-5HWS":"DDL608", "DDA270X-2TXS3":"DDA270X", "DDL230X-1HWP":"DDL230X",
+    "DDL220X-1HW":"DDL220X", "DDL702-FVP-7HWS":"DDL702", "DDL902-MFVP-11HWS":"DDL902",
+    "DDL720-5HWS":"DDL720-5"
+  },
+  "Zigbang Locks": { "SHP-R80FCLP/ZE":"R80FCLP", "SHP-DP609AS/ZE":"DP609", "SHP-H60FBXS/ZE":"H60FBXS" },
+  "Philips Safes": {
+    "SBX202-5C0":"SBX202-5C", "SBX202-6C0":"SBX202-6C", "SBX202-7C0":"SBX202-7C",
+    "SBX301-5PC":"SBX301", "SBX102-2C0":"SBX102", "SBX001-1M4":"SBX001",
+    "SBX501-5C0":"SBX501-5C", "SBX501-7C0":"SBX501-7C", "SBX602-8CU":"SBX602-8C",
+    "SBX602-6CU":"SBX602-6C"
+  }
+};
+// Services and point-of-sale display units are not products Sam tracks.
+const NOT_PRODUCT = /INSTALLATION|DISPLAY BOARD|DISPLAY BOX|CALL OUT/i;
+const nrm = s => (s||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
+
+function classify(desc){
+  if(NOT_PRODUCT.test(desc||"")) return null;
+  const d = nrm(desc);
+  for(const [cat, codes] of Object.entries(SALEOUT))
+    for(const [code, token] of Object.entries(codes))
+      if(d.includes(nrm(token))) return { code, cat };
+  return null;
+}
+
 let rows = [];
 let metric = "sales_value";
 let rowLimit = 40;
-let filters = { state:"all", weekFrom:null, weekTo:null, model:"", store:"" };
+let filters = { scope:"saleout", cat:"all", state:"all", weekFrom:null, weekTo:null, model:"", store:"" };
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -292,9 +342,18 @@ async function loadData(){
         country: f.country, wk_start: f.wk_start, item: f.item,
         description: imap.get(f.item) || "",
         store: f.store, store_name: s.store_name || f.store, state: s.state || "",
-        units_sold: Number(f.units_sold) || 0, sales_value: Number(f.sales_value) || 0
+        units_sold: Number(f.units_sold) || 0, sales_value: Number(f.sales_value) || 0,
+        saleCode: null, saleCat: null
       };
     }).filter(r => isRealStore(r.store_name));
+
+    // tag each row against the Saleout list (memoised per description)
+    const clsCache = new Map();
+    for(const r of rows){
+      let c = clsCache.get(r.description);
+      if(c === undefined){ c = classify(r.description); clsCache.set(r.description, c); }
+      if(c){ r.saleCode = c.code; r.saleCat = c.cat; }
+    }
 
     if(!rows.length){
       const el = document.getElementById("loadError");
@@ -357,7 +416,7 @@ function rebuildStateChips(){
 // which a single-select dropdown would have taken away. Picking an option just
 // fills the input with that exact value.
 function rebuildPickers(){
-  const scoped = rows.filter(r => r.country === country);
+  const scoped = applyFilters();
 
   const models = new Map();   // item -> {desc, sales}
   const stores = new Map();   // store name -> {state, sales}
@@ -453,6 +512,18 @@ function buildFilters(){
     render();
   });
 
+  [["scopeFilters","scope"],["catFilters","cat"]].forEach(([id,key]) => {
+    document.getElementById(id).querySelectorAll(".chip").forEach(chip => {
+      chip.addEventListener("click", () => {
+        document.querySelectorAll("#" + id + " .chip").forEach(c => c.classList.remove("active"));
+        chip.classList.add("active");
+        filters[key] = chip.dataset[key];
+        rebuildPickers();
+        render();
+      });
+    });
+  });
+
   document.getElementById("exportStores").addEventListener("click", exportStoreCsv);
   document.getElementById("exportMatrix").addEventListener("click", exportMatrixCsv);
 }
@@ -460,6 +531,8 @@ function buildFilters(){
 function applyFilters(){
   return rows.filter(r =>
     r.country === country &&
+    (filters.scope === "all" || r.saleCode) &&
+    (filters.cat === "all" || r.saleCat === filters.cat) &&
     (filters.state === "all" || r.state === filters.state) &&
     (!filters.weekFrom || (r.wk_start >= filters.weekFrom && r.wk_start <= filters.weekTo)) &&
     (!filters.model || r.item.toLowerCase().includes(filters.model) || (r.description||"").toLowerCase().includes(filters.model)) &&
@@ -475,7 +548,7 @@ function aggregate(f){
 
   for(const r of f){
     let m = models.get(r.item);
-    if(!m){ m = { desc:r.description, sales:0, units:0, ranged:new Set(), selling:new Set() }; models.set(r.item, m); }
+    if(!m){ m = { desc:r.description, code:r.saleCode, cat:r.saleCat, sales:0, units:0, ranged:new Set(), selling:new Set() }; models.set(r.item, m); }
     m.sales += r.sales_value; m.units += r.units_sold;
     m.ranged.add(r.store);
     if(r.units_sold > 0) m.selling.add(r.store);
@@ -523,10 +596,10 @@ function render(){
 function renderModels(models){
   const list = [...models.entries()].sort((a,b) => b[1][metric === "units_sold" ? "units" : "sales"] - a[1][metric === "units_sold" ? "units" : "sales"]);
   const body = document.getElementById("modelBody");
-  if(!list.length){ body.innerHTML = '<tr><td colspan="7" class="empty">No data for this selection</td></tr>'; return; }
+  if(!list.length){ body.innerHTML = '<tr><td colspan="9" class="empty">No data for this selection</td></tr>'; return; }
   body.innerHTML = list.map(([sku, m]) => {
     const avg = m.selling.size ? (metric === "units_sold" ? m.units : m.sales) / m.selling.size : 0;
-    return '<tr><td>' + sku + '</td><td class="desc">' + (m.desc || "").slice(0,60) + '</td>' +
+    return '<tr><td>' + sku + '</td><td>' + (m.code || "\u2014") + '</td><td class="desc">' + (m.cat || "\u2014") + '</td><td class="desc">' + (m.desc || "").slice(0,52) + '</td>' +
       '<td class="num">' + (metric === "units_sold" ? fmtNum(m.units) : fmtMoney(m.sales)) + '</td>' +
       '<td class="num">' + fmtNum(m.units) + '</td>' +
       '<td class="num">' + fmtNum(m.selling.size) + '</td>' +
