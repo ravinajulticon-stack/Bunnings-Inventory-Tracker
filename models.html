@@ -246,9 +246,12 @@ function isRealStore(name){
 // Sam's Saleout product list, mapped to Bunnings SKUs. Bunnings descriptions
 // carry the model family but not always the full Saleout suffix (e.g. Saleout
 // "DDL210S-1H" vs Bunnings "DDL210-1H"), so each code maps to a family TOKEN
-// matched against the description with punctuation stripped. Verified: 28 of 29
-// codes match, no SKU is claimed by two codes, and the set covers 97.3% of AU
-// sales. DDL902-MFVP-11HWS has no Bunnings equivalent at all.
+// matched against the description with punctuation stripped. Every code listed
+// here resolves to at least one Bunnings SKU and no SKU is claimed by two
+// codes. DDL902-MFVP-11HWS was on Sam's sheet but has no Bunnings equivalent
+// at all, so it has been removed rather than left as a silent dead entry.
+// DDL720-5HWS IS kept: it maps to SKU 1163845, ranged but with no sales — that
+// is a real signal, not a mismatch.
 const SALEOUT_NZ = {
   "Philips Locks": {
     "7300-5HWS":"7300", "DDL210S-1H":"DDL210-1H", "DDL210S-12H":"DDL210S-12H",
@@ -262,8 +265,7 @@ const SALEOUT_AU = {
     "DDL210S-12H":"DDL210S-12H", "DDL505-5HBS":"DDL505", "DDL720-MVP-17HWS":"DDL720-MVP",
     "DDL250X-14HWC":"DDL250X", "DDL615-5HBS":"DDL615", "DDL610-5HBS":"DDL610",
     "DDL608-5HWS":"DDL608", "DDA270X-2TXS3":"DDA270X", "DDL230X-1HWP":"DDL230X",
-    "DDL220X-1HW":"DDL220X", "DDL702-FVP-7HWS":"DDL702", "DDL902-MFVP-11HWS":"DDL902",
-    "DDL720-5HWS":"DDL720-5"
+    "DDL220X-1HW":"DDL220X", "DDL702-FVP-7HWS":"DDL702", "DDL720-5HWS":"DDL720-5"
   },
   "Zigbang Locks": { "SHP-R80FCLP/ZE":"R80FCLP", "SHP-DP609AS/ZE":"DP609", "SHP-H60FBXS/ZE":"H60FBXS" },
   "Philips Safes": {
